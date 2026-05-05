@@ -180,7 +180,43 @@ elif page == "Ask Question":
         
         if st.button("Get Answer", use_container_width=True):
             if question:
-                st.info("🔄 Generating answer... (Feature coming soon - LLM integration needed)")
+                with st.spinner("Generating answer..."):
+                    try:
+                        payload = {"question": question, "student_id": student_name or "anonymous"}
+                        resp = requests.post(f"{BACKEND_URL}/ask", json=payload, timeout=30)
+                        if resp.status_code == 200:
+                            data = resp.json()
+                            st.subheader("Answer (English)")
+                            st.write(data.get("answer_english", "(no answer)"))
+
+                            st.subheader("Explanation (Nepali)")
+                            st.write(data.get("answer_nepali", "(no nepali explanation)"))
+
+                            st.subheader("Quiz Questions")
+                            qlist = data.get("quiz_questions", [])
+                            if qlist:
+                                for i, q in enumerate(qlist, 1):
+                                    st.markdown(f"{i}. {q}")
+                            else:
+                                st.info("No quiz questions generated.")
+
+                            st.subheader("Retrieved Sources")
+                            sources = data.get("retrieved_sources", [])
+                            if sources:
+                                for s in sources:
+                                    st.markdown(f"- {s.get('filename', '')} (score: {s.get('score')})")
+                                    with st.expander("View excerpt"):
+                                        st.text(s.get("content", ""))
+                            else:
+                                st.info("No textbook context found. Try uploading a textbook.")
+
+                        else:
+                            detail = resp.json().get("detail", resp.text)
+                            st.error(f"Error from server: {detail}")
+                    except requests.exceptions.ConnectionError:
+                        st.error("Cannot connect to backend. Is it running?")
+                    except Exception as e:
+                        st.error(f"Error: {str(e)}")
             else:
                 st.warning("Please enter a question first!")
 

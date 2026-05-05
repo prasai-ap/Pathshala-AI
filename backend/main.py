@@ -13,6 +13,10 @@ from services.chunker import Chunker
 from services.embedding import EmbeddingService
 from services.qdrant_store import QdrantStore
 from models.schemas import TextbookUploadResponse
+from services.llm_client import get_default_client
+from agents.retriever_agent import RetrieverAgent
+from agents.tutor_agent import TutorAgent
+from agents.quiz_agent import QuizAgent
 
 # Load environment variables
 load_dotenv()
@@ -44,6 +48,12 @@ chunker = Chunker(chunk_size=512, chunk_overlap=64)
 # Embedding and vector store (Qdrant)
 embedding_service = EmbeddingService()
 qdrant_store = QdrantStore(collection_name=os.getenv("QDRANT_COLLECTION", "textbooks"))
+
+# LLM client and agents
+llm_client = get_default_client()
+retriever_agent = RetrieverAgent(embedding_service, qdrant_store)
+tutor_agent = TutorAgent(llm_client, retriever_agent)
+quiz_agent = QuizAgent(llm_client, retriever_agent)
 
 
 @app.get("/health")
@@ -208,6 +218,39 @@ async def search_context(question: str, top_k: int = 5):
         })
 
     return {"question": question, "results": out}
+
+
+@app.post("/ask")
+async def ask_question(question: str, student_id: str = "anonymous", top_k: int = 5):
+    """
+    Ask a tutoring question. Returns English and Nepali simple explanations,
+    3 quiz questions, and the retrieved sources used.
+    """
+    if not question or not question.strip():
+        raise HTTPException(status_code=400, detail="Question is required")
+
+    # Retrieve textbook context
+    contexts = await retriever_agent.retrieve_context(question, top_k=top_k)
+
+    # Tutor agent answer (English and Nepali)
+    tutor_resp = await tutor_agent.answer_question(question=question, student_id=student_id, language="English")
+
+    # Quiz generation (3 questions)
+    quiz_resp = await quiz_agent.generate_quiz(topic=question, num_questions=3, language="English")
+
+    # Build response
+    response = {
+        "answer_english": tutor_resp.get("answer_english", ""),
+        "answer_nepali": tutor_resp.get("answer_nepali", ""),
+        "quiz_questions": quiz_resp.get("quiz_questions", []),
+        "retrieved_sources": [{"id": c.get("id"), "score": c.get("score"), "content": c.get("content"), "filename": c.get("filename"), "upload_id": c.get("upload_id")} for c in contexts]
+    }
+
+    # If no retrieved content, indicate insufficient context
+    if not contexts:
+        response["note"] = "Insufficient textbook context found for this question. Please upload relevant textbook."
+
+    return response
 
 
 if __name__ == "__main__":
