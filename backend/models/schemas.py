@@ -47,3 +47,22 @@ class ParentReport(BaseModel):
     student_id: str
     period: str  # "weekly", "monthly"
     language: str
+
+
+class TextbookUploadResponse(BaseModel):
+    """Response schema for textbook upload"""
+    upload_id: str
+    filename: str
+    status: str  # "success", "error"
+    num_chunks: int
+    total_characters: int
+    message: Optional[str] = None
+
+
+class TextbookChunk(BaseModel):
+    """Schema for a text chunk"""
+    chunk_id: str
+    upload_id: str
+    content: str
+    page_number: Optional[int] = None
+    sequence_number: int

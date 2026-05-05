@@ -86,6 +86,51 @@ The AMD MI300X GPU will accelerate:
 
 Configuration for GPU acceleration is prepared in the `.env` file.
 
+---
+
+## PDF Ingestion & Chunking ✅
+
+### Implementation Details
+
+**PDF Upload Endpoint** - `POST /upload-textbook`
+- Accepts PDF file uploads with validation
+- Extracts text using PyMuPDF
+- Returns upload ID and chunk statistics
+
+**Text Extraction** (PyMuPDF)
+- Extracts text from all pages
+- Handles corrupted PDFs with error messages
+- Validates content is readable
+
+**Smart Chunking**
+- Splits into 512-character chunks
+- Maintains 64-character overlap for context
+- Uses sentence boundaries for natural splits
+
+**In-Memory Storage**
+- Chunks stored temporarily with upload ID
+- Quick retrieval for future operations
+- Preview endpoint for viewing chunks
+
+**Streamlit UI Updates**
+- File upload widget on "Upload Content" tab
+- Real-time progress tracking
+- Displays chunk statistics and preview
+- Session management for textbook persistence
+
+### Error Handling
+✅ Invalid PDF format detection  
+✅ Corrupted file handling  
+✅ Empty file validation  
+✅ No-readable-text detection  
+
+### Next Phase
+⏳ Qdrant vector database  
+⏳ LLM embeddings  
+⏳ Question answering from chunks  
+
+---
+
 ## Local Setup
 ```bash
 git clone <your-repo>
@@ -96,13 +141,39 @@ docker-compose up --build
 
 Backend: http://localhost:8000  
 Frontend: http://localhost:8501
+API Docs: http://localhost:8000/docs
+
+---
+
+## API Endpoints
+
+**POST /upload-textbook** - Upload and process PDF
+```bash
+curl -X POST "http://localhost:8000/upload-textbook" -F "file=@textbook.pdf"
+```
+
+**GET /textbooks/{upload_id}/preview** - Preview chunks
+```bash
+curl "http://localhost:8000/textbooks/upload-id/preview?chunk_count=3"
+```
+
+**GET /health** - Health check
+```bash
+curl "http://localhost:8000/health"
+```
+
+---
 
 ## Demo Script
-1. Upload a Nepali or English textbook PDF.
-2. Ask a simple question (e.g., “What is photosynthesis?”).
-3. If confused, type “I don’t समझे” to trigger Nepali explanation.
-4. Review the generated quiz.
-5. Open the parent summary for the student.
+
+1. **Upload**: Go to "Upload Content" → Select a PDF file
+2. **Extract**: Backend extracts text automatically
+3. **Preview**: View chunks of extracted content
+4. **Next Steps** (coming soon):
+   - Ask questions about the content
+   - Generate quizzes from topics
+   - Track learning progress
+   - Get parent reports
 
 ## Future Roadmap
 - WhatsApp integration for rural families
