@@ -11,3 +11,14 @@ class TextbookUploadResponse(BaseModel):
     filename: str
     page_count: int
     chunk_count: int
+
+
+class SearchMatch(BaseModel):
+    score: float
+    text: str
+    metadata: dict[str, object]
+
+
+class SearchContextResponse(BaseModel):
+    question: str
+    matches: list[SearchMatch]

@@ -42,11 +42,37 @@ if uploaded_pdf is not None:
             st.error(f"Could not reach backend: {exc}")
 
 st.header("Question")
-st.text_area("Ask a question in Nepali or English", disabled=True)
-st.caption("Placeholder for student questions.")
+question = st.text_area("Ask a question in Nepali or English")
+
+if st.button("Find Context", disabled=not question.strip()):
+    try:
+        response = requests.get(
+            f"{BACKEND_URL}/debug/search-context",
+            params={"question": question, "limit": 3},
+            timeout=30,
+        )
+
+        if response.ok:
+            st.session_state["context_matches"] = response.json().get("matches", [])
+        else:
+            try:
+                detail = response.json().get("detail", "Context search failed.")
+            except ValueError:
+                detail = "Context search failed."
+            st.error(detail)
+    except requests.RequestException as exc:
+        st.error(f"Could not reach backend: {exc}")
 
 st.header("Answer")
-st.info("Tutor answer will appear here.")
+st.info("LLM answer is not enabled yet. Retrieved context will appear below.")
+
+for match in st.session_state.get("context_matches", []):
+    score = match.get("score", 0)
+    metadata = match.get("metadata", {})
+    chunk_index = metadata.get("chunk_index", "unknown")
+    filename = metadata.get("filename", "textbook")
+    st.write(f"Source: {filename}, chunk {chunk_index}, score {score:.3f}")
+    st.write(match.get("text", ""))
 
 st.header("Quiz")
 st.info("Practice quiz will appear here.")

@@ -14,8 +14,8 @@ Pathshala AI will help students ask questions in Nepali or English, retrieve gro
 
 - FastAPI backend for API endpoints and agent orchestration
 - Streamlit frontend for the hackathon MVP interface
-- Temporary in-memory textbook chunk storage for the first ingestion flow
-- Qdrant vector database service reserved for future curriculum retrieval
+- Sentence-transformers embedding service for multilingual chunk and query vectors
+- Qdrant vector database for curriculum chunk storage and similarity search
 - Agent placeholders for supervision, retrieval, tutoring, quizzes, and parent summaries
 
 ## Upload Flow
@@ -23,10 +23,20 @@ Pathshala AI will help students ask questions in Nepali or English, retrieve gro
 1. Open the Streamlit frontend at `http://localhost:8501`.
 2. Upload a textbook or worksheet PDF in the Upload section.
 3. The frontend posts the PDF to `POST /upload-textbook`.
-4. The backend extracts text with PyMuPDF, chunks the text, and stores chunks in memory for the current process.
+4. The backend extracts text with PyMuPDF, chunks the text, embeds each chunk with sentence-transformers, and stores vectors in Qdrant.
 5. The UI shows the uploaded filename, page count, and chunk count.
 
 Invalid PDFs, empty files, and PDFs without readable text return a `400` error with a short message.
+
+## RAG Flow
+
+1. Upload a PDF textbook through Streamlit or `POST /upload-textbook`.
+2. The backend chunks the extracted text and indexes each chunk in Qdrant with filename and chunk metadata.
+3. A student question is embedded with the same sentence-transformer model.
+4. `search_context(question)` retrieves the most relevant chunks from Qdrant.
+5. `GET /debug/search-context?question=...` returns raw matching chunks for testing.
+
+No LLM answer generation is connected yet.
 
 ## AMD MI300X Usage Plan
 
