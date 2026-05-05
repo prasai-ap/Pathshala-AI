@@ -3,5 +3,6 @@ uvicorn[standard]
 streamlit
 pydantic
 python-dotenv
-qdrant-client
-pypdf
+PyMuPDF
+python-multipart
+requests
