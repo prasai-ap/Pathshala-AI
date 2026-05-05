@@ -10,6 +10,8 @@ from dotenv import load_dotenv
 
 from services.pdf_loader import PDFLoader, PDFLoadError
 from services.chunker import Chunker
+from services.embedding import EmbeddingService
+from services.qdrant_store import QdrantStore
 from models.schemas import TextbookUploadResponse
 
 # Load environment variables
@@ -38,6 +40,10 @@ textbook_chunks_store = {}  # {upload_id: {filename, chunks: [...], total_chars}
 # Initialize services
 pdf_loader = PDFLoader()
 chunker = Chunker(chunk_size=512, chunk_overlap=64)
+
+# Embedding and vector store (Qdrant)
+embedding_service = EmbeddingService()
+qdrant_store = QdrantStore(collection_name=os.getenv("QDRANT_COLLECTION", "textbooks"))
 
 
 @app.get("/health")
@@ -90,21 +96,35 @@ async def upload_textbook(file: UploadFile = File(...)):
                 detail="No readable content found in PDF"
             )
         
-        # Generate upload ID and store chunks
+        # Generate upload ID and store chunks (in-memory)
         upload_id = str(uuid.uuid4())
         textbook_chunks_store[upload_id] = {
             "filename": file.filename,
             "chunks": chunks,
             "total_chars": len(extracted_text)
         }
-        
+
+        # Embed chunks and store into Qdrant (best-effort)
+        try:
+            embeddings = embedding_service.embed_texts(chunks)
+            qdrant_store.upsert_chunks(upload_id=upload_id, filename=file.filename, chunks=chunks, embeddings=embeddings)
+            stored_in_qdrant = True
+        except Exception as e:
+            # Don't fail the upload if Qdrant/embeddings fail; log and continue
+            stored_in_qdrant = False
+            print(f"Warning: failed to store embeddings in Qdrant: {e}")
+
+        message = f"Successfully processed {file.filename} into {len(chunks)} chunks"
+        if stored_in_qdrant:
+            message += " and stored embeddings in Qdrant"
+
         return TextbookUploadResponse(
             upload_id=upload_id,
             filename=file.filename,
             status="success",
             num_chunks=len(chunks),
             total_characters=len(extracted_text),
-            message=f"Successfully processed {file.filename} into {len(chunks)} chunks"
+            message=message
         )
     
     except PDFLoadError as e:
@@ -147,6 +167,47 @@ async def get_textbook_preview(upload_id: str, chunk_count: int = 5):
         "preview_chunks": chunk_count,
         "chunks": chunks
     }
+
+
+@app.post("/search-context")
+async def search_context(question: str, top_k: int = 5):
+    """
+    Search Qdrant for top relevant chunks for a question
+
+    Args:
+        question: The user's question
+        top_k: Number of top chunks to return
+
+    Returns:
+        List of matching chunks with scores and payload
+    """
+    if not question or not question.strip():
+        raise HTTPException(status_code=400, detail="Question is required")
+
+    try:
+        qvec = embedding_service.embed_text(question)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Embedding error: {e}")
+
+    try:
+        results = qdrant_store.search(query_vector=qvec, top_k=top_k)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Search error: {e}")
+
+    # Return payloads and scores
+    out = []
+    for r in results:
+        payload = r.get("payload", {})
+        out.append({
+            "id": r.get("id"),
+            "score": r.get("score"),
+            "content": payload.get("content"),
+            "upload_id": payload.get("upload_id"),
+            "filename": payload.get("filename"),
+            "sequence": payload.get("sequence"),
+        })
+
+    return {"question": question, "results": out}
 
 
 if __name__ == "__main__":

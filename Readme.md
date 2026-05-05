@@ -131,6 +131,17 @@ Configuration for GPU acceleration is prepared in the `.env` file.
 
 ---
 
+## RAG Flow (Retrieval-Augmented Generation) — current plan
+
+1. Upload PDFs → extract text → chunk into segments (implemented)
+2. Compute embeddings for each chunk using `sentence-transformers`
+3. Store vectors + metadata in Qdrant (implemented)
+4. For an incoming question: compute question embedding → search Qdrant → retrieve top-k chunks
+5. (Future) Pass retrieved context + prompt to LLM to generate grounded answers
+
+This repo implements steps 1–4 so RAG pipelines can be plugged in next.
+
+
 ## Local Setup
 ```bash
 git clone <your-repo>
@@ -158,6 +169,11 @@ curl "http://localhost:8000/textbooks/upload-id/preview?chunk_count=3"
 ```
 
 **GET /health** - Health check
+
+**POST /search-context** - Search stored chunks for a question
+```bash
+curl -X POST "http://localhost:8000/search-context?question=What+is+photosynthesis?&top_k=5"
+```
 ```bash
 curl "http://localhost:8000/health"
 ```

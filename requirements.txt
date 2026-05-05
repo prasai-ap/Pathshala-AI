@@ -11,6 +11,10 @@ streamlit==1.28.1
 # PDF Processing
 pymupdf==1.23.8
 
+# Embeddings
+sentence-transformers==2.2.2
+torch==2.2.0
+
 # Vector Store
 qdrant-client==1.17.1
 
