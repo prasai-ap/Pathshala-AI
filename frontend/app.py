@@ -237,12 +237,46 @@ elif page == "Take Quiz":
             num_questions = st.slider("Number of Questions", 5, 20, 10)
         
         language = st.radio("Language", ["Nepali", "English"], horizontal=True)
-        
+
         if st.button("Generate Quiz", use_container_width=True):
             if topic:
                 st.info("🔄 Generating quiz... (Feature coming soon - LLM integration needed)")
             else:
                 st.warning("Please enter a topic first!")
+
+        st.divider()
+        st.subheader("Submit Quiz Result (Manual)")
+        qcol1, qcol2 = st.columns(2)
+        with qcol1:
+            s_id = st.text_input("Student ID", value=student_name or "anonymous")
+            s_name = st.text_input("Student Name", value=student_name or "")
+            q_topic = st.text_input("Topic", value=topic or "")
+        with qcol2:
+            q_score = st.number_input("Score", min_value=0, value=0)
+            q_total = st.number_input("Total Questions", min_value=1, value=5)
+            q_lang = st.selectbox("Language", ["Nepali", "English"], index=1)
+
+        if st.button("Submit Quiz Result", use_container_width=True):
+            if not s_id:
+                st.warning("Please enter Student ID")
+            else:
+                payload = {
+                    "student_id": s_id,
+                    "student_name": s_name,
+                    "topic": q_topic,
+                    "score": int(q_score),
+                    "total": int(q_total),
+                    "language": q_lang,
+                }
+                try:
+                    resp = requests.post(f"{BACKEND_URL}/submit-quiz", json=payload, timeout=15)
+                    if resp.status_code == 200:
+                        st.success("✅ Quiz result submitted")
+                        st.write(resp.json())
+                    else:
+                        st.error(f"Error: {resp.status_code} - {resp.text}")
+                except Exception as e:
+                    st.error(f"Failed to submit: {str(e)}")
 
 
 elif page == "Parent Report":
@@ -250,17 +284,52 @@ elif page == "Parent Report":
     
     col1, col2 = st.columns(2)
     with col1:
-        student_name = st.text_input("Student Name")
+        student_id = st.text_input("Student ID")
     with col2:
         period = st.selectbox("Report Period", ["Weekly", "Monthly"])
-    
+
     language = st.radio("Report Language", ["Nepali", "English"], horizontal=True)
-    
+
     if st.button("Generate Report", use_container_width=True):
-        if student_name:
-            st.info("🔄 Generating report... (Feature coming soon - tracking needed)")
+        if student_id:
+            try:
+                resp = requests.get(f"{BACKEND_URL}/parent-summary/{student_id}", timeout=15)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    st.subheader(f"Summary for {data.get('name') or data.get('student_id')}")
+                    st.markdown("**Strengths:**")
+                    strengths = data.get("strengths", [])
+                    if strengths:
+                        for s in strengths:
+                            st.markdown(f"- {s}")
+                    else:
+                        st.markdown("- (none yet)")
+
+                    st.markdown("**Weak Topics:**")
+                    weak = data.get("weak_topics", [])
+                    if weak:
+                        for w in weak:
+                            st.markdown(f"- {w}")
+                    else:
+                        st.markdown("- (none yet)")
+
+                    st.markdown("**Suggested Next Practice:**")
+                    sug = data.get("suggested_next_practice", [])
+                    if sug:
+                        for t in sug:
+                            st.markdown(f"- {t}")
+                    else:
+                        st.markdown("- Practice recent topics")
+
+                    st.markdown("**Note:**")
+                    st.info(data.get("encouraging_note", "Keep practicing!"))
+
+                else:
+                    st.error(f"Error fetching summary: {resp.status_code} - {resp.text}")
+            except Exception as e:
+                st.error(f"Failed to fetch summary: {str(e)}")
         else:
-            st.warning("Please enter student name first!")
+            st.warning("Please enter Student ID first!")
 
 # Footer
 st.divider()

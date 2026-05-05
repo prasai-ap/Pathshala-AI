@@ -17,6 +17,7 @@ from services.llm_client import get_default_client
 from agents.retriever_agent import RetrieverAgent
 from agents.tutor_agent import TutorAgent
 from agents.quiz_agent import QuizAgent
+from services.student_store import StudentStore
 
 # Load environment variables
 load_dotenv()
@@ -54,6 +55,7 @@ llm_client = get_default_client()
 retriever_agent = RetrieverAgent(embedding_service, qdrant_store)
 tutor_agent = TutorAgent(llm_client, retriever_agent)
 quiz_agent = QuizAgent(llm_client, retriever_agent)
+student_store = StudentStore()
 
 
 @app.get("/health")
@@ -251,6 +253,60 @@ async def ask_question(question: str, student_id: str = "anonymous", top_k: int 
         response["note"] = "Insufficient textbook context found for this question. Please upload relevant textbook."
 
     return response
+
+
+@app.post("/submit-quiz")
+async def submit_quiz(payload: dict):
+    """
+    Submit quiz results for a student. Expects JSON with:
+    - student_id (string)
+    - student_name (optional)
+    - topic (string)
+    - score (int)
+    - total (int)
+    - language (optional)
+    """
+    student_id = payload.get("student_id")
+    if not student_id:
+        raise HTTPException(status_code=400, detail="student_id is required")
+
+    # Ensure student exists
+    await student_store.create_student(student_id, name=payload.get("student_name", ""), language=payload.get("language", ""))
+
+    # Update progress
+    progress = {
+        "quiz": {"topic": payload.get("topic"), "score": payload.get("score"), "total": payload.get("total")},
+        "language": payload.get("language")
+    }
+    s = await student_store.update_progress(student_id, progress)
+
+    return {"status": "ok", "student": s.get("student_id"), "quiz_count": len(s.get("quiz_scores", []))}
+
+
+@app.get("/parent-summary/{student_id}")
+async def parent_summary(student_id: str):
+    """
+    Return a simple parent-friendly summary for a student
+    """
+    summary = await student_store.compute_summary(student_id)
+    if summary.get("message"):
+        raise HTTPException(status_code=404, detail=summary.get("message"))
+
+    # Build readable summary
+    strengths = summary.get("strengths", [])
+    weak_topics = summary.get("weak_topics", [])
+    suggested = summary.get("suggested_next_practice", [])
+    note = summary.get("encouraging_note", "Keep practicing!")
+
+    return {
+        "student_id": student_id,
+        "name": summary.get("name"),
+        "strengths": strengths,
+        "weak_topics": weak_topics,
+        "suggested_next_practice": suggested,
+        "encouraging_note": note,
+        "summary": summary.get("summary", {})
+    }
 
 
 if __name__ == "__main__":
