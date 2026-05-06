@@ -22,6 +22,9 @@ DEFAULT_QDRANT_URL = "http://localhost:6333"
 DEFAULT_QDRANT_COLLECTION = "pathshala_curriculum"
 DEFAULT_EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 DEFAULT_LLM_MODEL = "Qwen/Qwen2.5-7B-Instruct"
+DEFAULT_TRANSLATION_PROVIDER = "mock"
+DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
+DEFAULT_OPENAI_MODEL = "gpt-4o"
 
 
 @dataclass(frozen=True)
@@ -38,6 +41,11 @@ class AppConfig:
     llm_base_url: str
     llm_api_key: str
     llm_model: str
+    translation_provider: str
+    gemini_api_key: str
+    gemini_model: str
+    openai_api_key: str
+    openai_model: str
 
     @property
     def llm_mode(self) -> str:
@@ -79,6 +87,9 @@ def validate_config(config: AppConfig) -> None:
     if config.llm_base_url and not config.llm_api_key.strip():
         LOGGER.warning("LLM_BASE_URL is set but LLM_API_KEY is empty.")
 
+    if config.translation_provider not in {"gemini", "openai", "mock"}:
+        raise RuntimeError("TRANSLATION_PROVIDER must be gemini, openai, or mock.")
+
 
 @lru_cache(maxsize=1)
 def get_config() -> AppConfig:
@@ -100,6 +111,14 @@ def get_config() -> AppConfig:
         llm_base_url=os.getenv("LLM_BASE_URL", "").strip().rstrip("/"),
         llm_api_key=os.getenv("LLM_API_KEY", "").strip(),
         llm_model=os.getenv("LLM_MODEL", DEFAULT_LLM_MODEL).strip(),
+        translation_provider=os.getenv(
+            "TRANSLATION_PROVIDER",
+            DEFAULT_TRANSLATION_PROVIDER,
+        ).strip().lower(),
+        gemini_api_key=os.getenv("GEMINI_API_KEY", "").strip(),
+        gemini_model=os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL).strip(),
+        openai_api_key=os.getenv("OPENAI_API_KEY", "").strip(),
+        openai_model=os.getenv("OPENAI_MODEL", DEFAULT_OPENAI_MODEL).strip(),
     )
     validate_config(config)
     return config
@@ -125,6 +144,13 @@ def log_startup_config(config: AppConfig) -> None:
             config.llm_base_url,
             config.llm_model,
         )
+
+    if config.translation_provider == "gemini" and config.gemini_api_key:
+        LOGGER.info("Nepali adaptation mode: Gemini using model %s", config.gemini_model)
+    elif config.translation_provider == "openai" and config.openai_api_key:
+        LOGGER.info("Nepali adaptation mode: OpenAI using model %s", config.openai_model)
+    else:
+        LOGGER.info("Nepali adaptation mode: mock fallback")
 
 
 def _get_int(name: str, default: int) -> int:

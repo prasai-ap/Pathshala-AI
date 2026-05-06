@@ -101,50 +101,60 @@ else:
 st.header("Quiz")
 if result:
     quiz_questions = result.get("quiz_questions", [])
+    quiz_answers = []
 
     for index, quiz_question in enumerate(quiz_questions, start=1):
         st.write(f"{index}. {quiz_question}")
+        quiz_answers.append(
+            st.text_input(
+                f"Your answer {index}",
+                key=f"quiz_answer_{result.get('quiz_id', 'latest')}_{index}",
+            )
+        )
+
+    if st.button("Submit Quiz Answers", disabled=not result.get("quiz_id")):
+        try:
+            response = requests.post(
+                f"{BACKEND_URL}/grade-quiz",
+                json={
+                    "student_id": student_id,
+                    "quiz_id": result.get("quiz_id"),
+                    "answers": quiz_answers,
+                },
+                timeout=SHORT_TIMEOUT_SECONDS,
+            )
+
+            if response.ok:
+                st.session_state["quiz_grade"] = response.json()
+                st.success("Quiz graded.")
+            else:
+                try:
+                    detail = response.json().get("detail", "Quiz grading failed.")
+                except ValueError:
+                    detail = "Quiz grading failed."
+                st.error(detail)
+        except requests.Timeout:
+            st.error("Quiz grading timed out. Please try again.")
+        except requests.RequestException as exc:
+            st.error(f"Could not reach backend: {exc}")
 else:
     st.info("Practice questions will appear here.")
 
-st.subheader("Submit Quiz Result")
-quiz_topic = st.text_input("Quiz topic", value="")
-quiz_score = st.number_input("Score", min_value=0, value=0, step=1)
-quiz_total = st.number_input("Total questions", min_value=1, value=3, step=1)
-weak_areas_text = st.text_input("Weak areas, comma separated", value="")
+grade = st.session_state.get("quiz_grade")
 
-if st.button("Submit Quiz Result", disabled=not quiz_topic.strip()):
-    weak_areas = [
-        area.strip()
-        for area in weak_areas_text.split(",")
-        if area.strip()
-    ]
+if grade:
+    st.subheader("Quiz Result")
+    st.write(f"Score: {grade.get('score', 0)} / {grade.get('total', 0)}")
 
-    try:
-        response = requests.post(
-            f"{BACKEND_URL}/submit-quiz",
-            json={
-                "student_id": student_id,
-                "topic": quiz_topic,
-                "score": quiz_score,
-                "total": quiz_total,
-                "weak_areas": weak_areas,
-            },
-            timeout=SHORT_TIMEOUT_SECONDS,
-        )
+    weak_areas = grade.get("weak_areas", [])
+    if weak_areas:
+        st.write(f"Weak areas: {', '.join(weak_areas)}")
 
-        if response.ok:
-            st.success("Quiz result saved.")
-        else:
-            try:
-                detail = response.json().get("detail", "Quiz submission failed.")
-            except ValueError:
-                detail = "Quiz submission failed."
-            st.error(detail)
-    except requests.Timeout:
-        st.error("Quiz submission timed out. Please try again.")
-    except requests.RequestException as exc:
-        st.error(f"Could not reach backend: {exc}")
+    for item in grade.get("results", []):
+        status = "Correct" if item.get("is_correct") else "Needs practice"
+        st.write(f"{status}: {item.get('question', '')}")
+        if not item.get("is_correct"):
+            st.caption(f"Expected idea: {item.get('expected_answer', '')}")
 
 st.header("Retrieved Sources")
 if result:

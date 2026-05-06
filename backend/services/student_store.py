@@ -1,7 +1,9 @@
 """In-memory student progress store."""
 
 from collections import Counter, defaultdict
+from difflib import SequenceMatcher
 from typing import Any
+from uuid import uuid4
 
 
 DEFAULT_STUDENT_ID = "demo-student"
@@ -33,6 +35,7 @@ class StudentStore:
 
     def __init__(self) -> None:
         self.students: dict[str, dict[str, Any]] = defaultdict(self._new_progress)
+        self.quizzes: dict[str, dict[str, Any]] = {}
 
     def record_question(
         self,
@@ -82,6 +85,87 @@ class StudentStore:
 
         progress["weak_areas"].update(self._normalize_topics(weak_areas))
         return progress
+
+    def create_quiz(
+        self,
+        student_id: str,
+        topic: str,
+        items: list[dict[str, str]],
+    ) -> str:
+        quiz_id = str(uuid4())
+        normalized_topic = self._normalize_topic(topic) or "general practice"
+        normalized_items = [
+            {
+                "question": item.get("question", "").strip(),
+                "expected_answer": item.get("expected_answer", "").strip(),
+                "weak_area": self._normalize_topic(item.get("weak_area")) or normalized_topic,
+            }
+            for item in items
+            if item.get("question", "").strip()
+        ]
+
+        self.quizzes[quiz_id] = {
+            "student_id": student_id or DEFAULT_STUDENT_ID,
+            "topic": normalized_topic,
+            "items": normalized_items[:3],
+        }
+        return quiz_id
+
+    def grade_quiz(
+        self,
+        student_id: str,
+        quiz_id: str,
+        answers: list[str],
+    ) -> dict[str, Any]:
+        if quiz_id not in self.quizzes:
+            raise ValueError("quiz_id was not found. Ask a question to create a quiz first.")
+
+        quiz = self.quizzes[quiz_id]
+        stored_student_id = quiz["student_id"]
+        request_student_id = student_id or DEFAULT_STUDENT_ID
+
+        if stored_student_id != request_student_id:
+            raise ValueError("quiz_id does not belong to this student.")
+
+        results = []
+        weak_areas = []
+
+        for index, item in enumerate(quiz["items"]):
+            student_answer = answers[index].strip() if index < len(answers) else ""
+            expected_answer = item["expected_answer"]
+            is_correct = self._is_answer_correct(student_answer, expected_answer)
+
+            if not is_correct:
+                weak_areas.append(item["weak_area"])
+
+            results.append(
+                {
+                    "question": item["question"],
+                    "student_answer": student_answer,
+                    "is_correct": is_correct,
+                    "expected_answer": expected_answer,
+                    "weak_area": item["weak_area"],
+                }
+            )
+
+        score = sum(1 for result in results if result["is_correct"])
+        total = len(results)
+        progress = self.submit_quiz(
+            student_id=request_student_id,
+            topic=quiz["topic"],
+            score=score,
+            total=total,
+            weak_areas=weak_areas,
+        )
+
+        return {
+            "student_id": request_student_id,
+            "quiz_id": quiz_id,
+            "score": score,
+            "total": total,
+            "weak_areas": sorted(progress["weak_areas"]),
+            "results": results,
+        }
 
     def get_parent_summary(self, student_id: str) -> dict[str, Any]:
         progress = self.students[student_id or DEFAULT_STUDENT_ID]
@@ -196,3 +280,27 @@ class StudentStore:
             for part in language_support.replace("&", "and").split("and")
             if part.strip()
         ]
+
+    def _is_answer_correct(self, student_answer: str, expected_answer: str) -> bool:
+        normalized_student = self._normalize_answer(student_answer)
+        normalized_expected = self._normalize_answer(expected_answer)
+
+        if not normalized_student or not normalized_expected:
+            return False
+
+        if normalized_student in normalized_expected or normalized_expected in normalized_student:
+            return True
+
+        student_tokens = set(normalized_student.split())
+        expected_tokens = set(normalized_expected.split())
+        overlap = len(student_tokens & expected_tokens) / max(len(expected_tokens), 1)
+        similarity = SequenceMatcher(None, normalized_student, normalized_expected).ratio()
+
+        return overlap >= 0.45 or similarity >= 0.7
+
+    def _normalize_answer(self, answer: str) -> str:
+        return " ".join(
+            word.strip(".,?!:;()[]{}\"'").lower()
+            for word in answer.split()
+            if word.strip(".,?!:;()[]{}\"'")
+        )

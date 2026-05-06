@@ -13,8 +13,10 @@ Many rural primary students in Nepal do not have steady access to personalized l
 - Embed chunks with `sentence-transformers`.
 - Store and search curriculum chunks with Qdrant.
 - Ask a student question through `POST /ask`.
-- Generate simple English and Nepali explanations using an OpenAI-compatible LLM endpoint or mock fallback.
-- Generate 3 simple quiz questions.
+- Generate a grounded English explanation with AMD MI300X/vLLM or mock fallback.
+- Adapt the English answer into natural Nepali using Gemini.
+- Generate 3 simple quiz questions with hidden answer keys.
+- Auto-grade quiz answers and infer weak areas from missed questions.
 - Track questions asked, topics, quiz scores, weak areas, and bilingual support in memory.
 - Show a parent/teacher summary.
 - Run a separate Hugging Face Space demo with Gradio.
@@ -47,6 +49,10 @@ Streamlit UI  --------------------->  FastAPI Backend
       |                                      |    - AMD MI300X vLLM endpoint
       |                                      |    - mock fallback for local demo
       |                                      |
+      |                                      +--> Nepali Adaptation Service
+      |                                      |    - Gemini, or mock fallback
+      |                                      |    - language polish only
+      |                                      |
       |                                      +--> StudentStore
       |                                           - in-memory progress
       |                                           - parent summary
@@ -62,8 +68,10 @@ English answer, Nepali answer, quiz, sources, parent summary
 3. A student question is embedded with the same sentence-transformer model.
 4. `search_context(question)` retrieves the top relevant chunks.
 5. `POST /ask` sends the question and retrieved chunks through the tutoring workflow.
-6. The tutor prompt says to use textbook context only, explain like a primary-school tutor, keep answers simple, and admit when context is insufficient.
-7. The response includes `answer_english`, `answer_nepali`, `quiz_questions`, and `retrieved_sources`.
+6. AMD MI300X/vLLM generates the core textbook-grounded English tutoring answer.
+7. Gemini adapts only that English answer into natural Nepali for primary-school students.
+8. The response includes `answer_english`, `answer_nepali`, `quiz_id`, `quiz_questions`, and `retrieved_sources`.
+9. The UI shows only quiz questions to the student. Hidden expected answers stay in backend memory and are used by `POST /grade-quiz`.
 
 ## AMD MI300X vLLM Mode
 
@@ -81,12 +89,40 @@ Expected endpoint:
 POST {LLM_BASE_URL}/chat/completions
 ```
 
-This lets the app use high-throughput MI300X inference for bilingual tutoring while keeping local development simple. For local mock mode, leave `LLM_BASE_URL` empty so the backend returns deterministic demo responses without calling a model server.
+This lets the app use high-throughput MI300X inference for core textbook-grounded reasoning while keeping local development simple. For local mock mode, leave `LLM_BASE_URL` empty so the backend returns deterministic demo responses without calling a model server.
+
+Important: AMD MI300X/vLLM is used for core textbook-grounded reasoning. Gemini is used only for Nepali language adaptation.
 
 At startup, backend logs clearly show one of:
 
 - `LLM mode: AMD vLLM mode ...`
 - `LLM mode: mock mode because LLM_BASE_URL is empty.`
+
+## Nepali Language Adaptation
+
+The AMD-hosted tutor model produces the grounded English explanation. Gemini is then used only for translation/polish into simple Nepali.
+
+Set these values in `.env`:
+
+```env
+TRANSLATION_PROVIDER=gemini
+GEMINI_API_KEY=YOUR_GEMINI_API_KEY
+GEMINI_MODEL=gemini-2.5-flash
+```
+
+For offline/local demo fallback:
+
+```env
+TRANSLATION_PROVIDER=mock
+```
+
+If `TRANSLATION_PROVIDER=gemini` but `GEMINI_API_KEY` is missing, the app falls back to mock Nepali adaptation. Provider failures also fall back to mock so the demo keeps working.
+
+After changing `.env`, recreate the backend/frontend containers so Docker reloads the env values:
+
+```bash
+docker compose up -d --force-recreate backend frontend
+```
 
 ## Environment Variables
 
@@ -112,6 +148,9 @@ The app loads `.env` with `python-dotenv`. Docker Compose also reads `.env`.
 | `LLM_BASE_URL` | Backend | Empty means mock mode; set to AMD vLLM `/v1` URL for real inference |
 | `LLM_API_KEY` | Backend | Sent as bearer token when configured |
 | `LLM_MODEL` | Backend | Model name sent to `/chat/completions` |
+| `TRANSLATION_PROVIDER` | Backend | `gemini` or `mock` for Nepali adaptation |
+| `GEMINI_API_KEY` | Backend | Gemini key used only when `TRANSLATION_PROVIDER=gemini` |
+| `GEMINI_MODEL` | Backend | Gemini model for Nepali adaptation |
 
 ## Local Setup
 
@@ -205,9 +244,9 @@ curl -X POST http://localhost:8000/ask \
 Submit quiz result:
 
 ```bash
-curl -X POST http://localhost:8000/submit-quiz \
+curl -X POST http://localhost:8000/grade-quiz \
   -H "Content-Type: application/json" \
-  -d "{\"student_id\":\"demo-student\",\"topic\":\"fractions\",\"score\":2,\"total\":3,\"weak_areas\":[\"equal parts\"]}"
+  -d "{\"student_id\":\"demo-student\",\"quiz_id\":\"QUIZ_ID_FROM_ASK\",\"answers\":[\"part of a whole\",\"equal parts\",\"top and bottom numbers\"]}"
 ```
 
 Parent summary:
@@ -232,6 +271,7 @@ curl "http://localhost:8000/debug/search-context?question=What%20is%20a%20fracti
 6. Submit a manual quiz result, for example topic `fractions`, score `2` out of `3`, weak area `equal parts`.
 7. Click `Show Parent/Teacher Summary`.
 8. Explain that AMD MI300X vLLM can replace mock mode by setting `LLM_BASE_URL`, `LLM_API_KEY`, and `LLM_MODEL`.
+9. Explain that Gemini is enabled only for Nepali language adaptation with `TRANSLATION_PROVIDER=gemini`.
 
 ## Screenshots
 

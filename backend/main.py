@@ -9,6 +9,8 @@ from backend.agents.tutor_agent import TutorAgent
 from backend.models.schemas import (
     AskRequest,
     AskResponse,
+    AutoGradeQuizRequest,
+    AutoGradeQuizResponse,
     ParentSummaryResponse,
     SubmitQuizRequest,
     SubmitQuizResponse,
@@ -19,6 +21,7 @@ from backend.services.embedding import get_embedding_service
 from backend.services.llm_client import LLMClientError, get_llm_client
 from backend.services.pdf_loader import PDFExtractionError, extract_pdf_text
 from backend.services.student_store import DEFAULT_STUDENT_ID, StudentStore
+from backend.services.translation_service import get_translation_service
 from backend.services.vector_store import VectorStore
 
 
@@ -173,10 +176,21 @@ def ask_question(request: AskRequest) -> AskResponse:
         llm_client = get_llm_client()
         tutor_agent = TutorAgent(llm_client=llm_client)
         quiz_agent = QuizAgent(llm_client=llm_client)
+        translation_service = get_translation_service()
 
         answer_english = tutor_agent.answer_english(request.question, sources)
-        answer_nepali = tutor_agent.answer_nepali(request.question, sources)
-        quiz_questions = quiz_agent.generate(request.question, sources)
+        answer_nepali = translation_service.to_nepali(
+            question=request.question,
+            english_answer=answer_english,
+            sources=sources,
+        )
+        quiz_items = quiz_agent.generate_items(request.question, sources)
+        quiz_questions = [item["question"] for item in quiz_items]
+        quiz_id = student_store.create_quiz(
+            student_id=request.student_id,
+            topic=request.question,
+            items=quiz_items,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except LLMClientError as exc:
@@ -187,9 +201,24 @@ def ask_question(request: AskRequest) -> AskResponse:
     return AskResponse(
         answer_english=answer_english,
         answer_nepali=answer_nepali,
+        quiz_id=quiz_id,
         quiz_questions=quiz_questions,
         retrieved_sources=sources,
     )
+
+
+@app.post("/grade-quiz", response_model=AutoGradeQuizResponse)
+def grade_quiz(request: AutoGradeQuizRequest) -> AutoGradeQuizResponse:
+    try:
+        result = get_student_store().grade_quiz(
+            student_id=request.student_id,
+            quiz_id=request.quiz_id,
+            answers=request.answers,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return AutoGradeQuizResponse(**result)
 
 
 @app.post("/submit-quiz", response_model=SubmitQuizResponse)

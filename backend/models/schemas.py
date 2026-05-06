@@ -39,6 +39,7 @@ class RetrievedSource(BaseModel):
 class AskResponse(BaseModel):
     answer_english: str
     answer_nepali: str
+    quiz_id: str | None = None
     quiz_questions: list[str]
     retrieved_sources: list[RetrievedSource]
 
@@ -57,6 +58,29 @@ class SubmitQuizResponse(BaseModel):
     score: int
     total: int
     weak_areas: list[str]
+
+
+class AutoGradeQuizRequest(BaseModel):
+    student_id: str = "demo-student"
+    quiz_id: str
+    answers: list[str] = Field(default_factory=list)
+
+
+class GradedQuizItem(BaseModel):
+    question: str
+    student_answer: str
+    is_correct: bool
+    expected_answer: str
+    weak_area: str
+
+
+class AutoGradeQuizResponse(BaseModel):
+    student_id: str
+    quiz_id: str
+    score: int
+    total: int
+    weak_areas: list[str]
+    results: list[GradedQuizItem]
 
 
 class ParentSummaryResponse(BaseModel):

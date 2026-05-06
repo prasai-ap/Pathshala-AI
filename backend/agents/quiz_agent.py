@@ -14,23 +14,31 @@ class QuizAgent:
         self.llm_client = llm_client
 
     def generate(self, question: str, sources: list[dict[str, Any]]) -> list[str]:
+        return [item["question"] for item in self.generate_items(question, sources)]
+
+    def generate_items(self, question: str, sources: list[dict[str, Any]]) -> list[dict[str, str]]:
         if not sources:
             return [
-                "There is not enough textbook context to create quiz questions.",
+                {
+                    "question": "There is not enough textbook context to create quiz questions.",
+                    "expected_answer": "Not enough textbook context.",
+                    "weak_area": "textbook context",
+                },
             ]
 
         if self.llm_client.is_mock:
-            return self._mock_questions(sources)
+            return self._mock_items(sources)
 
         system_prompt = (
             "You create primary-school quiz questions. Use only the provided textbook "
-            "context. Keep questions simple. If the context is insufficient, say so. "
-            "Return only a JSON array of exactly 3 strings."
+            "context. Keep questions simple. Return only a JSON array of exactly 3 "
+            "objects. Each object must have question, expected_answer, and weak_area. "
+            "Do not include explanations or markdown."
         )
         prompt = (
             f"Student question:\n{question}\n\n"
             f"Textbook context:\n{self._format_sources(sources)}\n\n"
-            "Create 3 simple quiz questions."
+            "Create 3 simple auto-gradable quiz questions with short expected answers."
         )
         response = self.llm_client.complete(
             prompt=prompt,
@@ -39,7 +47,53 @@ class QuizAgent:
             max_tokens=300,
         )
 
-        return self._parse_questions(response)
+        return self._parse_items(response, sources)
+
+    def _parse_items(self, response: str, sources: list[dict[str, Any]]) -> list[dict[str, str]]:
+        response = response.strip()
+
+        try:
+            parsed = json.loads(self._extract_json_array(response))
+        except (TypeError, ValueError):
+            parsed = []
+
+        items = []
+
+        if isinstance(parsed, list):
+            for item in parsed:
+                if isinstance(item, dict):
+                    question = str(item.get("question", "")).strip()
+                    expected_answer = str(item.get("expected_answer", "")).strip()
+                    weak_area = str(item.get("weak_area", "")).strip()
+
+                    if question:
+                        items.append(
+                            {
+                                "question": question,
+                                "expected_answer": expected_answer or self._source_answer(sources),
+                                "weak_area": weak_area or self._source_weak_area(sources),
+                            }
+                        )
+                elif isinstance(item, str) and item.strip():
+                    items.append(
+                        {
+                            "question": item.strip(),
+                            "expected_answer": self._source_answer(sources),
+                            "weak_area": self._source_weak_area(sources),
+                        }
+                    )
+
+        if not items:
+            items = [
+                {
+                    "question": question,
+                    "expected_answer": self._source_answer(sources),
+                    "weak_area": self._source_weak_area(sources),
+                }
+                for question in self._parse_questions(response)
+            ]
+
+        return (items or self._mock_items(sources))[:3]
 
     def _parse_questions(self, response: str) -> list[str]:
         response = response.strip()
@@ -93,17 +147,37 @@ class QuizAgent:
 
         return "\n\n".join(formatted_sources)
 
-    def _mock_questions(self, sources: list[dict[str, Any]]) -> list[str]:
+    def _mock_items(self, sources: list[dict[str, Any]]) -> list[dict[str, str]]:
         context = str(sources[0].get("text", "")).strip()
 
         if not context:
-            return ["There is not enough textbook context to create quiz questions."]
+            return [
+                {
+                    "question": "There is not enough textbook context to create quiz questions.",
+                    "expected_answer": "Not enough textbook context.",
+                    "weak_area": "textbook context",
+                }
+            ]
 
         short_context = self._truncate(context, max_length=120)
+        expected_answer = self._source_answer(sources)
+        weak_area = self._source_weak_area(sources)
         return [
-            "What is the main idea in the retrieved textbook context?",
-            f"What does this textbook line mean: {short_context}",
-            "Can you explain the answer in your own simple words?",
+            {
+                "question": "What is the main idea in the retrieved textbook context?",
+                "expected_answer": expected_answer,
+                "weak_area": weak_area,
+            },
+            {
+                "question": f"What does this textbook line mean: {short_context}",
+                "expected_answer": expected_answer,
+                "weak_area": weak_area,
+            },
+            {
+                "question": "Can you explain the answer in your own simple words?",
+                "expected_answer": expected_answer,
+                "weak_area": weak_area,
+            },
         ]
 
     def _truncate(self, text: str, max_length: int = 500) -> str:
@@ -111,3 +185,17 @@ class QuizAgent:
             return text
 
         return f"{text[: max_length - 3]}..."
+
+    def _source_answer(self, sources: list[dict[str, Any]]) -> str:
+        text = str(sources[0].get("text", "")).strip()
+        first_sentence = re.split(r"(?<=[.!?])\s+", text)[0].strip()
+        return self._truncate(first_sentence or text, max_length=180)
+
+    def _source_weak_area(self, sources: list[dict[str, Any]]) -> str:
+        text = str(sources[0].get("text", "")).strip()
+        words = [
+            word.strip(".,?!:;()[]{}\"'").lower()
+            for word in text.split()
+            if len(word.strip(".,?!:;()[]{}\"'")) > 4
+        ]
+        return words[0] if words else "textbook concept"
