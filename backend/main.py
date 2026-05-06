@@ -54,7 +54,29 @@ def search_context(question: str, limit: int = 5) -> list[dict[str, object]]:
     embedding_service = get_embedding_service()
     vector_store = get_vector_store()
     query_embedding = embedding_service.embed_query(question)
-    return vector_store.search(query_embedding=query_embedding, limit=limit)
+    matches = vector_store.search(query_embedding=query_embedding, limit=limit * 2)
+    return dedupe_sources(matches)[:limit]
+
+
+def dedupe_sources(sources: list[dict[str, object]]) -> list[dict[str, object]]:
+    deduped = []
+    seen = set()
+
+    for source in sources:
+        metadata = source.get("metadata", {})
+        key = (
+            metadata.get("filename") if isinstance(metadata, dict) else None,
+            metadata.get("chunk_index") if isinstance(metadata, dict) else None,
+            source.get("text", ""),
+        )
+
+        if key in seen:
+            continue
+
+        seen.add(key)
+        deduped.append(source)
+
+    return deduped
 
 
 def get_student_store() -> StudentStore:

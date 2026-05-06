@@ -1,6 +1,7 @@
 """Quiz agent for simple textbook-grounded practice questions."""
 
 import json
+import re
 from typing import Any
 
 from backend.services.llm_client import LLMClient
@@ -41,14 +42,16 @@ class QuizAgent:
         return self._parse_questions(response)
 
     def _parse_questions(self, response: str) -> list[str]:
+        response = response.strip()
+
         try:
-            parsed = json.loads(response)
+            parsed = json.loads(self._extract_json_array(response))
             questions = [item.strip() for item in parsed if isinstance(item, str)]
         except (TypeError, ValueError):
             questions = [
-                line.strip(" -0123456789.")
+                self._clean_question_line(line)
                 for line in response.splitlines()
-                if line.strip()
+                if self._clean_question_line(line)
             ]
 
         questions = [question for question in questions if question]
@@ -57,6 +60,24 @@ class QuizAgent:
             return ["Could not create quiz questions from the available context."]
 
         return questions[:3]
+
+    def _extract_json_array(self, response: str) -> str:
+        match = re.search(r"\[[\s\S]*\]", response)
+        return match.group(0) if match else response
+
+    def _clean_question_line(self, line: str) -> str:
+        cleaned = line.strip().strip("`").strip()
+
+        if not cleaned or cleaned in {"[", "]"}:
+            return ""
+
+        cleaned = re.sub(r"^\s*[-*]?\s*\d+[\).\s-]*", "", cleaned)
+        cleaned = cleaned.strip().strip(",").strip('"').strip("'").strip()
+
+        if cleaned in {"[", "]"}:
+            return ""
+
+        return cleaned
 
     def _format_sources(self, sources: list[dict[str, Any]]) -> str:
         formatted_sources = []
