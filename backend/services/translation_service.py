@@ -46,6 +46,29 @@ class TranslationService:
         LOGGER.info("Using mock Nepali adaptation because translation provider/key is missing.")
         return self._mock_nepali(question=question, english_answer=english_answer, sources=sources)
 
+    def normalize_question(self, question: str) -> str:
+        """Convert English, Nepali, or romanized Nepali into a clear English query."""
+        cleaned_question = question.strip()
+
+        if not cleaned_question:
+            return cleaned_question
+
+        provider = self.config.translation_provider
+
+        if provider == "gemini" and self.config.gemini_api_key:
+            try:
+                normalized = self._normalize_with_gemini(cleaned_question)
+                normalized = self._clean_normalized_question(normalized)
+
+                if normalized:
+                    return normalized
+            except requests.RequestException as exc:
+                LOGGER.warning("Question normalization provider failed: %s", exc)
+            except (KeyError, IndexError, TypeError, ValueError) as exc:
+                LOGGER.warning("Question normalization provider returned invalid response: %s", exc)
+
+        return self._mock_normalize_question(cleaned_question)
+
     def _with_provider_fallback(
         self,
         provider_call,
@@ -113,6 +136,40 @@ class TranslationService:
         data = response.json()
         return data["candidates"][0]["content"]["parts"][0]["text"]
 
+    def _normalize_with_gemini(self, question: str) -> str:
+        model = self.config.gemini_model
+        endpoint = (
+            "https://generativelanguage.googleapis.com/v1beta/"
+            f"models/{model}:generateContent"
+        )
+        payload = {
+            "contents": [
+                {
+                    "parts": [
+                        {
+                            "text": self._normalization_prompt(question),
+                        }
+                    ]
+                }
+            ],
+            "generationConfig": {
+                "temperature": 0,
+                "maxOutputTokens": 80,
+            },
+        }
+        response = requests.post(
+            endpoint,
+            json=payload,
+            headers={
+                "Content-Type": "application/json",
+                "x-goog-api-key": self.config.gemini_api_key,
+            },
+            timeout=min(self.timeout_seconds, 20),
+        )
+        response.raise_for_status()
+        data = response.json()
+        return data["candidates"][0]["content"]["parts"][0]["text"]
+
     def _translate_with_openai(self, question: str, english_answer: str) -> str:
         payload = {
             "model": self.config.openai_model,
@@ -157,6 +214,15 @@ class TranslationService:
             "citations or headings.\n\n"
             f"Student question:\n{question}\n\n"
             f"English answer:\n{english_answer}"
+        )
+
+    def _normalization_prompt(self, question: str) -> str:
+        return (
+            "Convert this student question into one clear, simple English question for "
+            "textbook search. The question may be written in English, Nepali Devanagari, "
+            "or romanized Nepali typed with English letters. Do not answer the question. "
+            "Return only the rewritten English question.\n\n"
+            f"Student question:\n{question}"
         )
 
     def _mock_nepali(
@@ -235,6 +301,127 @@ class TranslationService:
             )
 
         return None
+
+    def _mock_normalize_question(self, question: str) -> str:
+        text = question.lower()
+
+        if (
+            "soil erosion" in text
+            or "erosion" in text
+            or "माटो कटान" in question
+            or (
+                self._has_any(text, ["mati", "mato", "matto", "maato"])
+                and self._has_any(text, ["katan", "katne", "katnu", "bagcha", "bagdai"])
+            )
+        ):
+            return "What is soil erosion?"
+
+        if self._has_any(text, ["oxygen", "aksijan", "akshijan", "अक्सिजन"]):
+            return "What is oxygen?"
+
+        if (
+            "photosynthesis" in text
+            or "प्रकाश संश्लेषण" in question
+            or (
+                self._has_any(text, ["prakash", "prakaash"])
+                and self._has_any(text, ["sansleshan", "samsleshan", "sanshleshan"])
+            )
+        ):
+            return "What is photosynthesis?"
+
+        if self._has_any(text, ["fraction", "bhinn", "vag", "bhaag", "भाग", "भिन्न"]):
+            return "What is a fraction?"
+
+        if self._has_any(text, ["mitochondria", "mitochondrion", "mitokondria"]):
+            return "What is mitochondria?"
+
+        if self._has_any(text, ["chloroplast", "kloroplast", "chlorophyll"]):
+            return "What is chloroplast?"
+
+        if self._has_any(text, ["cell", "koshika", "kosika", "कोषिका"]):
+            return "What is a cell?"
+
+        if self._has_any(text, ["energy", "urja", "oorja", "ऊर्जा"]):
+            return "What is energy?"
+
+        mixed_topic = self._extract_mixed_language_topic(text)
+
+        if mixed_topic:
+            return f"What is {mixed_topic}?"
+
+        return question
+
+    def _extract_mixed_language_topic(self, text: str) -> str:
+        markers = [
+            " vaneko ",
+            " bhaneko ",
+            " vanya ",
+            " bhanya ",
+            " vanne ",
+            " bhanne ",
+        ]
+
+        if not any(marker in f" {text} " for marker in markers):
+            return ""
+
+        topic = f" {text} "
+        removable_phrases = [
+            " vaneko ",
+            " bhaneko ",
+            " vanya ",
+            " bhanya ",
+            " vanne ",
+            " bhanne ",
+            " ke ho ",
+            " k ho ",
+            " kya ho ",
+            " ho ",
+            " ? ",
+        ]
+
+        for phrase in removable_phrases:
+            topic = topic.replace(phrase, " ")
+
+        topic = " ".join(topic.split()).strip(" ?.,")
+
+        if not topic:
+            return ""
+
+        blocked_words = {
+            "malai",
+            "please",
+            "explain",
+            "bujhau",
+            "bujhaunu",
+            "sir",
+            "mam",
+        }
+        words = [word for word in topic.split() if word not in blocked_words]
+        topic = " ".join(words)
+
+        if not topic or len(topic) > 80:
+            return ""
+
+        return topic
+
+    def _clean_normalized_question(self, text: str) -> str:
+        cleaned = text.strip().strip("\"'`")
+        cleaned = cleaned.replace("Rewritten English question:", "").strip()
+        cleaned = cleaned.splitlines()[0].strip() if cleaned else ""
+
+        if not cleaned:
+            return ""
+
+        if len(cleaned) > 180:
+            return ""
+
+        if "?" not in cleaned and len(cleaned.split()) > 1:
+            cleaned = f"{cleaned}?"
+
+        return cleaned
+
+    def _has_any(self, text: str, keywords: list[str]) -> bool:
+        return any(keyword in text for keyword in keywords)
 
     def _is_valid_nepali(self, text: str) -> bool:
         devanagari_count = sum(1 for character in text if "\u0900" <= character <= "\u097f")

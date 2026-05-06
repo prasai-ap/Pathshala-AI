@@ -56,7 +56,7 @@ if uploaded_pdf is not None:
             st.error(f"Could not reach backend: {exc}")
 
 st.header("Question")
-question = st.text_area("Ask a question in Nepali or English")
+question = st.text_area("Ask a question in Nepali, romanized Nepali, or English")
 
 if st.button("Ask Tutor", disabled=not question.strip()):
     try:
@@ -90,6 +90,10 @@ result = st.session_state.get("tutor_response")
 
 st.header("Answer")
 if result:
+    normalized_question = result.get("normalized_question")
+    if normalized_question and normalized_question.strip().lower() != question.strip().lower():
+        st.caption(f"Interpreted question: {normalized_question}")
+
     st.subheader("English")
     st.write(result.get("answer_english", ""))
 

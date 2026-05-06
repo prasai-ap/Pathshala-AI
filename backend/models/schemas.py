@@ -37,6 +37,7 @@ class RetrievedSource(BaseModel):
 
 
 class AskResponse(BaseModel):
+    normalized_question: str | None = None
     answer_english: str
     answer_nepali: str
     quiz_id: str | None = None

@@ -164,8 +164,10 @@ def debug_search_context(question: str, limit: int = 5) -> dict[str, object]:
 @app.post("/ask", response_model=AskResponse)
 def ask_question(request: AskRequest) -> AskResponse:
     try:
+        translation_service = get_translation_service()
+        normalized_question = translation_service.normalize_question(request.question)
         retriever_agent = RetrieverAgent(search_context=search_context)
-        sources = retriever_agent.retrieve(request.question, limit=5)
+        sources = retriever_agent.retrieve(normalized_question, limit=5)
         student_store = get_student_store()
         student_store.record_question(
             student_id=request.student_id,
@@ -176,19 +178,18 @@ def ask_question(request: AskRequest) -> AskResponse:
         llm_client = get_llm_client()
         tutor_agent = TutorAgent(llm_client=llm_client)
         quiz_agent = QuizAgent(llm_client=llm_client)
-        translation_service = get_translation_service()
 
-        answer_english = tutor_agent.answer_english(request.question, sources)
+        answer_english = tutor_agent.answer_english(normalized_question, sources)
         answer_nepali = translation_service.to_nepali(
             question=request.question,
             english_answer=answer_english,
             sources=sources,
         )
-        quiz_items = quiz_agent.generate_items(request.question, sources)
+        quiz_items = quiz_agent.generate_items(normalized_question, sources)
         quiz_questions = [item["question"] for item in quiz_items]
         quiz_id = student_store.create_quiz(
             student_id=request.student_id,
-            topic=request.question,
+            topic=normalized_question,
             items=quiz_items,
         )
     except ValueError as exc:
@@ -199,6 +200,7 @@ def ask_question(request: AskRequest) -> AskResponse:
         raise HTTPException(status_code=503, detail=f"Tutoring workflow failed: {exc}") from exc
 
     return AskResponse(
+        normalized_question=normalized_question,
         answer_english=answer_english,
         answer_nepali=answer_nepali,
         quiz_id=quiz_id,

@@ -1,6 +1,6 @@
 # Pathshala AI
 
-Pathshala AI is a bilingual AI tutor for rural primary education in Nepal. It helps students ask questions in English or Nepali, grounds answers in uploaded textbook PDFs, creates short practice quizzes, and gives parents or teachers a simple progress summary.
+Pathshala AI is a bilingual AI tutor for rural primary education in Nepal. It helps students ask questions in English, Nepali, or romanized Nepali, grounds answers in uploaded textbook PDFs, creates short practice quizzes, and gives parents or teachers a simple progress summary.
 
 ## Hackathon Pitch
 
@@ -13,6 +13,7 @@ Many rural primary students in Nepal do not have steady access to personalized l
 - Embed chunks with `sentence-transformers`.
 - Store and search curriculum chunks with Qdrant.
 - Ask a student question through `POST /ask`.
+- Accept English, Nepali, and romanized Nepali questions such as `mato katan bhaneko ke ho`.
 - Generate a grounded English explanation with AMD MI300X/vLLM or mock fallback.
 - Adapt the English answer into natural Nepali using Gemini.
 - Generate 3 simple quiz questions with hidden answer keys.
@@ -51,6 +52,7 @@ Streamlit UI  --------------------->  FastAPI Backend
       |                                      |
       |                                      +--> Nepali Adaptation Service
       |                                      |    - Gemini, or mock fallback
+      |                                      |    - romanized Nepali question normalization
       |                                      |    - language polish only
       |                                      |
       |                                      +--> StudentStore
@@ -65,13 +67,14 @@ English answer, Nepali answer, quiz, sources, parent summary
 
 1. Upload a PDF textbook through Streamlit or `POST /upload-textbook`.
 2. The backend extracts readable text, chunks it, embeds every chunk, and stores the vectors in Qdrant.
-3. A student question is embedded with the same sentence-transformer model.
-4. `search_context(question)` retrieves the top relevant chunks.
-5. `POST /ask` sends the question and retrieved chunks through the tutoring workflow.
-6. AMD MI300X/vLLM generates the core textbook-grounded English tutoring answer.
-7. Gemini adapts only that English answer into natural Nepali for primary-school students.
-8. The response includes `answer_english`, `answer_nepali`, `quiz_id`, `quiz_questions`, and `retrieved_sources`.
-9. The UI shows only quiz questions to the student. Hidden expected answers stay in backend memory and are used by `POST /grade-quiz`.
+3. A student question is normalized if needed. For example, romanized Nepali like `mato katan bhaneko ke ho` is interpreted as `What is soil erosion?`.
+4. The normalized question is embedded with the same sentence-transformer model.
+5. `search_context(question)` retrieves the top relevant chunks.
+6. `POST /ask` sends the normalized question and retrieved chunks through the tutoring workflow.
+7. AMD MI300X/vLLM generates the core textbook-grounded English tutoring answer.
+8. Gemini adapts only that English answer into natural Nepali for primary-school students.
+9. The response includes `normalized_question`, `answer_english`, `answer_nepali`, `quiz_id`, `quiz_questions`, and `retrieved_sources`.
+10. The UI shows only quiz questions to the student. Hidden expected answers stay in backend memory and are used by `POST /grade-quiz`.
 
 ## AMD MI300X vLLM Mode
 
@@ -91,7 +94,7 @@ POST {LLM_BASE_URL}/chat/completions
 
 This lets the app use high-throughput MI300X inference for core textbook-grounded reasoning while keeping local development simple. For local mock mode, leave `LLM_BASE_URL` empty so the backend returns deterministic demo responses without calling a model server.
 
-Important: AMD MI300X/vLLM is used for core textbook-grounded reasoning. Gemini is used only for Nepali language adaptation.
+Important: AMD MI300X/vLLM is used for core textbook-grounded reasoning. Gemini is used only for language adaptation: romanized-Nepali question normalization and Nepali explanation polish.
 
 At startup, backend logs clearly show one of:
 
@@ -100,7 +103,7 @@ At startup, backend logs clearly show one of:
 
 ## Nepali Language Adaptation
 
-The AMD-hosted tutor model produces the grounded English explanation. Gemini is then used only for translation/polish into simple Nepali.
+The AMD-hosted tutor model produces the grounded English explanation. Gemini is then used only for question normalization and translation/polish into simple Nepali.
 
 Set these values in `.env`:
 
@@ -116,7 +119,7 @@ For offline/local demo fallback:
 TRANSLATION_PROVIDER=mock
 ```
 
-If `TRANSLATION_PROVIDER=gemini` but `GEMINI_API_KEY` is missing, the app falls back to mock Nepali adaptation. Provider failures also fall back to mock so the demo keeps working.
+If `TRANSLATION_PROVIDER=gemini` but `GEMINI_API_KEY` is missing, the app falls back to mock Nepali adaptation. Provider failures also fall back to mock so the demo keeps working. The mock path includes keyword support for common romanized Nepali questions such as `oxygen ke ho`, `mato katan bhaneko ke ho`, and `prakash sansleshan vaneko ke ho`.
 
 After changing `.env`, recreate the backend/frontend containers so Docker reloads the env values:
 
@@ -266,12 +269,12 @@ curl "http://localhost:8000/debug/search-context?question=What%20is%20a%20fracti
 1. Start with the problem: rural primary students need simple bilingual help grounded in their actual textbooks.
 2. Open `http://localhost:8501`.
 3. Upload a small textbook or worksheet PDF.
-4. Ask: `What is a fraction?`
-5. Show the English explanation, Nepali explanation, 3 quiz questions, and retrieved textbook sources.
-6. Submit a manual quiz result, for example topic `fractions`, score `2` out of `3`, weak area `equal parts`.
+4. Ask: `mato katan bhaneko ke ho` or `What is a fraction?`
+5. Show the interpreted question, English explanation, Nepali explanation, 3 quiz questions, and retrieved textbook sources.
+6. Type short quiz answers and submit them. The backend auto-grades and infers weak areas.
 7. Click `Show Parent/Teacher Summary`.
 8. Explain that AMD MI300X vLLM can replace mock mode by setting `LLM_BASE_URL`, `LLM_API_KEY`, and `LLM_MODEL`.
-9. Explain that Gemini is enabled only for Nepali language adaptation with `TRANSLATION_PROVIDER=gemini`.
+9. Explain that Gemini is enabled only for language adaptation with `TRANSLATION_PROVIDER=gemini`, while AMD MI300X/vLLM handles the textbook-grounded reasoning.
 
 ## Screenshots
 
