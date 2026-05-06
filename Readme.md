@@ -34,9 +34,21 @@ Invalid PDFs, empty files, and PDFs without readable text return a `400` error w
 2. The backend chunks the extracted text and indexes each chunk in Qdrant with filename and chunk metadata.
 3. A student question is embedded with the same sentence-transformer model.
 4. `search_context(question)` retrieves the most relevant chunks from Qdrant.
-5. `GET /debug/search-context?question=...` returns raw matching chunks for testing.
+5. `POST /ask` sends the question and retrieved textbook chunks through the tutoring workflow.
+6. The retriever agent returns relevant sources, the tutor agent creates simple English and Nepali explanations, and the quiz agent creates three practice questions.
+7. `GET /debug/search-context?question=...` returns raw matching chunks for testing.
 
-No LLM answer generation is connected yet.
+The tutoring prompts instruct the model to use textbook context only, explain like a primary-school tutor, keep answers simple, and say when the retrieved context is insufficient.
+
+Example ask request:
+
+```bash
+curl -X POST http://localhost:8000/ask \
+  -H "Content-Type: application/json" \
+  -d "{\"question\":\"What is photosynthesis?\"}"
+```
+
+The response includes `answer_english`, `answer_nepali`, `quiz_questions`, and `retrieved_sources`.
 
 ## AMD MI300X Usage Plan
 

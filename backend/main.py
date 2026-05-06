@@ -2,8 +2,13 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 
+from backend.agents.quiz_agent import QuizAgent
+from backend.agents.retriever_agent import RetrieverAgent
+from backend.agents.tutor_agent import TutorAgent
+from backend.models.schemas import AskRequest, AskResponse
 from backend.services.chunker import chunk_text
 from backend.services.embedding import get_embedding_service
+from backend.services.llm_client import LLMClientError, get_llm_client
 from backend.services.pdf_loader import PDFExtractionError, extract_pdf_text
 from backend.services.vector_store import VectorStore
 
@@ -110,3 +115,31 @@ async def debug_search_context(question: str, limit: int = 5) -> dict[str, objec
         raise HTTPException(status_code=503, detail=f"Vector search failed: {exc}") from exc
 
     return {"question": question, "matches": context}
+
+
+@app.post("/ask", response_model=AskResponse)
+async def ask_question(request: AskRequest) -> AskResponse:
+    try:
+        retriever_agent = RetrieverAgent(search_context=search_context)
+        sources = retriever_agent.retrieve(request.question, limit=5)
+
+        llm_client = get_llm_client()
+        tutor_agent = TutorAgent(llm_client=llm_client)
+        quiz_agent = QuizAgent(llm_client=llm_client)
+
+        answer_english = tutor_agent.answer_english(request.question, sources)
+        answer_nepali = tutor_agent.answer_nepali(request.question, sources)
+        quiz_questions = quiz_agent.generate(request.question, sources)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except LLMClientError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Tutoring workflow failed: {exc}") from exc
+
+    return AskResponse(
+        answer_english=answer_english,
+        answer_nepali=answer_nepali,
+        quiz_questions=quiz_questions,
+        retrieved_sources=sources,
+    )
