@@ -30,7 +30,7 @@ def ask_tutor(question: str, textbook_context: str) -> tuple[str, str, str]:
     if BACKEND_URL:
         backend_result = ask_backend(question)
 
-        if backend_result:
+        if backend_result and not is_insufficient_backend_result(backend_result):
             return backend_result
 
     return mock_response(question=question, textbook_context=textbook_context)
@@ -72,6 +72,18 @@ def format_backend_response(data: dict[str, Any]) -> tuple[str, str, str]:
     )
 
 
+def is_insufficient_backend_result(result: tuple[str, str, str]) -> bool:
+    combined = " ".join(result).lower()
+    markers = [
+        "not have enough textbook context",
+        "not enough textbook context",
+        "insufficient context",
+        "पर्याप्त जानकारी छैन",
+        "पर्याप्त सन्दर्भ छैन",
+    ]
+    return any(marker in combined for marker in markers)
+
+
 def mock_response(question: str, textbook_context: str) -> tuple[str, str, str]:
     context = textbook_context or EXAMPLE_CONTEXT
     simple_context = truncate(context, max_length=450)
@@ -84,8 +96,7 @@ def mock_response(question: str, textbook_context: str) -> tuple[str, str, str]:
     )
     nepali = (
         "मक डेमो उत्तर: म पाठ्यपुस्तकको सन्दर्भ मात्र प्रयोग गर्दैछु। "
-        "यो विषयलाई सरल रूपमा बुझ्दा, माटोको माथिल्लो उपयोगी भाग हावा वा पानीले "
-        "बगाएर लैजान सक्छ। यस्तो हुँदा खेतीका लागि माटो कमजोर हुन सक्छ।"
+        f"{mock_nepali_explanation(normalized_question)}"
     )
     quiz = format_quiz(
         [
@@ -96,6 +107,38 @@ def mock_response(question: str, textbook_context: str) -> tuple[str, str, str]:
     )
 
     return english, nepali, quiz
+
+
+def mock_nepali_explanation(normalized_question: str) -> str:
+    text = normalized_question.lower()
+
+    if "soil erosion" in text:
+        return (
+            "माटो कटान भनेको हावा, पानी वा अरू प्राकृतिक कारणले माटोको माथिल्लो "
+            "मलिलो भाग हट्नु हो। यसले खेतको माटो कमजोर बनाउन सक्छ। रूख र घाँस "
+            "लगाउँदा माटो जोगाउन मद्दत हुन्छ।"
+        )
+
+    if "photosynthesis" in text:
+        return (
+            "प्रकाश संश्लेषण भनेको हरिया बिरुवाले घामको प्रकाश, पानी र कार्बन "
+            "डाइअक्साइड प्रयोग गरेर आफ्नो खाना बनाउने प्रक्रिया हो। यस क्रममा "
+            "अक्सिजन पनि निस्कन्छ।"
+        )
+
+    if "fraction" in text:
+        return (
+            "भिन्न भनेको कुनै पूर्ण वस्तुको भाग देखाउने संख्या हो। जस्तै, एउटा "
+            "रोटी बराबर भागमा काट्दा एक भागलाई भिन्नबाट देखाउन सकिन्छ।"
+        )
+
+    if "oxygen" in text:
+        return (
+            "अक्सिजन एउटा ग्यास हो। मानिस, जनावर र धेरै जीवहरूले सास फेर्दा "
+            "अक्सिजन प्रयोग गर्छन्। यो जीवनका लागि महत्त्वपूर्ण हुन्छ।"
+        )
+
+    return "यो विषयलाई सरल रूपमा बुझ्न पाठ्यपुस्तकको सन्दर्भ पढेर मुख्य कुरा सम्झनुहोस्।"
 
 
 def normalize_question_mock(question: str) -> str:
