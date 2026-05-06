@@ -60,8 +60,13 @@ class TranslationService:
                 normalized = self._normalize_with_gemini(cleaned_question)
                 normalized = self._clean_normalized_question(normalized)
 
-                if normalized:
+                if self._is_valid_normalized_question(normalized):
                     return normalized
+
+                LOGGER.warning(
+                    "Question normalization provider returned weak query: %s",
+                    normalized,
+                )
             except requests.RequestException as exc:
                 LOGGER.warning("Question normalization provider failed: %s", exc)
             except (KeyError, IndexError, TypeError, ValueError) as exc:
@@ -419,6 +424,20 @@ class TranslationService:
             cleaned = f"{cleaned}?"
 
         return cleaned
+
+    def _is_valid_normalized_question(self, text: str) -> bool:
+        cleaned = text.strip().strip("?").lower()
+
+        if not cleaned:
+            return False
+
+        if cleaned in {"what", "why", "how", "when", "where", "who"}:
+            return False
+
+        if len(cleaned.split()) < 3:
+            return False
+
+        return True
 
     def _has_any(self, text: str, keywords: list[str]) -> bool:
         return any(keyword in text for keyword in keywords)
