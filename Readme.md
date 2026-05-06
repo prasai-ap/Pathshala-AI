@@ -57,6 +57,8 @@ The MVP will target an AMD MI300X-hosted open model for high-throughput bilingua
 docker compose up
 ```
 
+The frontend uses `requirements-frontend.txt` so it does not install the backend ML stack. The backend uses CPU PyTorch wheels for sentence-transformers during local Docker development.
+
 Backend health check:
 
 ```bash
