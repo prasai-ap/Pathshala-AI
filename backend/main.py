@@ -75,12 +75,12 @@ async def health_check() -> dict[str, str]:
 
 
 @app.post("/upload-textbook")
-async def upload_textbook(file: UploadFile = File(...)) -> dict[str, object]:
+def upload_textbook(file: UploadFile = File(...)) -> dict[str, object]:
     filename = file.filename or "uploaded-textbook.pdf"
     if not filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are supported.")
 
-    pdf_bytes = await file.read()
+    pdf_bytes = file.file.read()
 
     try:
         extracted = extract_pdf_text(pdf_bytes)
@@ -125,7 +125,7 @@ async def upload_textbook(file: UploadFile = File(...)) -> dict[str, object]:
 
 
 @app.get("/debug/search-context")
-async def debug_search_context(question: str, limit: int = 5) -> dict[str, object]:
+def debug_search_context(question: str, limit: int = 5) -> dict[str, object]:
     try:
         context = search_context(question=question, limit=limit)
     except ValueError as exc:
@@ -137,7 +137,7 @@ async def debug_search_context(question: str, limit: int = 5) -> dict[str, objec
 
 
 @app.post("/ask", response_model=AskResponse)
-async def ask_question(request: AskRequest) -> AskResponse:
+def ask_question(request: AskRequest) -> AskResponse:
     try:
         retriever_agent = RetrieverAgent(search_context=search_context)
         sources = retriever_agent.retrieve(request.question, limit=5)
@@ -171,7 +171,7 @@ async def ask_question(request: AskRequest) -> AskResponse:
 
 
 @app.post("/submit-quiz", response_model=SubmitQuizResponse)
-async def submit_quiz_result(request: SubmitQuizRequest) -> SubmitQuizResponse:
+def submit_quiz_result(request: SubmitQuizRequest) -> SubmitQuizResponse:
     try:
         student_id = request.student_id or DEFAULT_STUDENT_ID
         progress = get_student_store().submit_quiz(
@@ -194,6 +194,6 @@ async def submit_quiz_result(request: SubmitQuizRequest) -> SubmitQuizResponse:
 
 
 @app.get("/parent-summary/{student_id}", response_model=ParentSummaryResponse)
-async def parent_summary(student_id: str) -> ParentSummaryResponse:
+def parent_summary(student_id: str) -> ParentSummaryResponse:
     summary = get_student_store().get_parent_summary(student_id)
     return ParentSummaryResponse(**summary)

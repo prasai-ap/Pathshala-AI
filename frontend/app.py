@@ -9,6 +9,9 @@ load_dotenv()
 
 APP_NAME = os.getenv("APP_NAME", "Pathshala AI")
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
+UPLOAD_TIMEOUT_SECONDS = 180
+ASK_TIMEOUT_SECONDS = 180
+SHORT_TIMEOUT_SECONDS = 45
 
 st.set_page_config(page_title=APP_NAME, page_icon="PA", layout="centered")
 
@@ -29,7 +32,7 @@ if uploaded_pdf is not None:
             response = requests.post(
                 f"{BACKEND_URL}/upload-textbook",
                 files={"file": (uploaded_pdf.name, uploaded_pdf.getvalue(), "application/pdf")},
-                timeout=30,
+                timeout=UPLOAD_TIMEOUT_SECONDS,
             )
 
             if response.ok:
@@ -44,6 +47,11 @@ if uploaded_pdf is not None:
                 except ValueError:
                     detail = "Upload failed."
                 st.error(detail)
+        except requests.Timeout:
+            st.error(
+                "Backend is still processing the PDF. Try again in a moment, or use a "
+                "smaller PDF for the demo."
+            )
         except requests.RequestException as exc:
             st.error(f"Could not reach backend: {exc}")
 
@@ -59,7 +67,7 @@ if st.button("Ask Tutor", disabled=not question.strip()):
                 "student_id": student_id,
                 "language_support": "English and Nepali",
             },
-            timeout=90,
+            timeout=ASK_TIMEOUT_SECONDS,
         )
 
         if response.ok:
@@ -70,6 +78,11 @@ if st.button("Ask Tutor", disabled=not question.strip()):
             except ValueError:
                 detail = "Question failed."
             st.error(detail)
+    except requests.Timeout:
+        st.error(
+            "The tutor request timed out. If the AMD endpoint is slow or unavailable, "
+            "clear LLM_BASE_URL in .env to use mock mode."
+        )
     except requests.RequestException as exc:
         st.error(f"Could not reach backend: {exc}")
 
@@ -117,7 +130,7 @@ if st.button("Submit Quiz Result", disabled=not quiz_topic.strip()):
                 "total": quiz_total,
                 "weak_areas": weak_areas,
             },
-            timeout=30,
+            timeout=SHORT_TIMEOUT_SECONDS,
         )
 
         if response.ok:
@@ -128,6 +141,8 @@ if st.button("Submit Quiz Result", disabled=not quiz_topic.strip()):
             except ValueError:
                 detail = "Quiz submission failed."
             st.error(detail)
+    except requests.Timeout:
+        st.error("Quiz submission timed out. Please try again.")
     except requests.RequestException as exc:
         st.error(f"Could not reach backend: {exc}")
 
@@ -148,7 +163,7 @@ if st.button("Show Parent/Teacher Summary"):
     try:
         response = requests.get(
             f"{BACKEND_URL}/parent-summary/{student_id}",
-            timeout=30,
+            timeout=SHORT_TIMEOUT_SECONDS,
         )
 
         if response.ok:
@@ -159,6 +174,8 @@ if st.button("Show Parent/Teacher Summary"):
             except ValueError:
                 detail = "Summary failed."
             st.error(detail)
+    except requests.Timeout:
+        st.error("Summary request timed out. Please try again.")
     except requests.RequestException as exc:
         st.error(f"Could not reach backend: {exc}")
 
