@@ -12,7 +12,7 @@ pinned: false
 
 Pathshala AI is a bilingual AI tutor demo for rural primary students in Nepal.
 
-The Gradio Space accepts a student question and optional textbook context, then returns:
+The Gradio Space accepts a student question in English, Nepali, or romanized Nepali plus optional textbook context, then returns:
 
 - English explanation
 - Nepali explanation
@@ -27,6 +27,7 @@ BACKEND_URL=https://your-backend.example.com
 ```
 
 The app calls `POST /ask` and displays the backend response.
+If the backend returns `normalized_question`, the Space shows the interpreted question above the English explanation.
 
 ## Mock Mode
 
@@ -35,5 +36,5 @@ If `BACKEND_URL` is missing or the backend is unavailable, the Space uses a simp
 Example question:
 
 ```text
-What is a fraction?
+soil erosion vaneko ke ho
 ```

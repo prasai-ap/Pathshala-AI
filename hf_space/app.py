@@ -9,10 +9,10 @@ import requests
 load_dotenv()
 
 BACKEND_URL = os.getenv("BACKEND_URL", "").rstrip("/")
-EXAMPLE_QUESTION = "What is a fraction?"
+EXAMPLE_QUESTION = "soil erosion vaneko ke ho"
 EXAMPLE_CONTEXT = (
-    "A fraction shows a part of a whole. The top number tells how many parts we have. "
-    "The bottom number tells how many equal parts the whole is divided into."
+    "Soil erosion is the removal of topsoil by wind, water, or other natural forces. "
+    "It can make farmland less fertile and can be reduced by planting trees and grass."
 )
 
 
@@ -59,9 +59,14 @@ def ask_backend(question: str) -> tuple[str, str, str] | None:
 
 def format_backend_response(data: dict[str, Any]) -> tuple[str, str, str]:
     quiz_questions = data.get("quiz_questions", [])
+    english_answer = data.get("answer_english", "No English answer returned.")
+    normalized_question = str(data.get("normalized_question") or "").strip()
+
+    if normalized_question:
+        english_answer = f"Interpreted question: {normalized_question}\n\n{english_answer}"
 
     return (
-        data.get("answer_english", "No English answer returned."),
+        english_answer,
         data.get("answer_nepali", "नेपाली उत्तर प्राप्त भएन।"),
         format_quiz(quiz_questions),
     )
@@ -70,14 +75,17 @@ def format_backend_response(data: dict[str, Any]) -> tuple[str, str, str]:
 def mock_response(question: str, textbook_context: str) -> tuple[str, str, str]:
     context = textbook_context or EXAMPLE_CONTEXT
     simple_context = truncate(context, max_length=450)
+    normalized_question = normalize_question_mock(question)
 
     english = (
+        f"Interpreted question: {normalized_question}\n\n"
         "Mock demo answer: I am using the textbook context only. "
-        f"For the question '{question}', a simple explanation is: {simple_context}"
+        f"A simple explanation is: {simple_context}"
     )
     nepali = (
-        "Mock demo उत्तर: म पाठ्यपुस्तकको सन्दर्भ मात्र प्रयोग गर्दैछु। "
-        f"'{question}' प्रश्नका लागि सरल व्याख्या: {simple_context}"
+        "मक डेमो उत्तर: म पाठ्यपुस्तकको सन्दर्भ मात्र प्रयोग गर्दैछु। "
+        "यो विषयलाई सरल रूपमा बुझ्दा, माटोको माथिल्लो उपयोगी भाग हावा वा पानीले "
+        "बगाएर लैजान सक्छ। यस्तो हुँदा खेतीका लागि माटो कमजोर हुन सक्छ।"
     )
     quiz = format_quiz(
         [
@@ -88,6 +96,24 @@ def mock_response(question: str, textbook_context: str) -> tuple[str, str, str]:
     )
 
     return english, nepali, quiz
+
+
+def normalize_question_mock(question: str) -> str:
+    text = question.lower()
+
+    if "soil erosion" in text or ("mato" in text and "katan" in text):
+        return "What is soil erosion?"
+
+    if "photosynthesis" in text or ("prakash" in text and "sansleshan" in text):
+        return "What is photosynthesis?"
+
+    if "fraction" in text or "bhinn" in text:
+        return "What is a fraction?"
+
+    if "oxygen" in text or "aksijan" in text:
+        return "What is oxygen?"
+
+    return question
 
 
 def format_quiz(quiz_questions: list[Any]) -> str:
@@ -121,7 +147,8 @@ with gr.Blocks(title="Pathshala AI", theme=gr.themes.Soft()) as demo:
     gr.Markdown(
         """
         # Pathshala AI
-        Bilingual AI tutor for rural primary students in Nepal.
+        Bilingual AI tutor for rural primary students in Nepal. Try English, Nepali,
+        or romanized Nepali questions like `soil erosion vaneko ke ho`.
         """
     )
 
@@ -158,6 +185,21 @@ with gr.Blocks(title="Pathshala AI", theme=gr.themes.Soft()) as demo:
     gr.Examples(
         examples=[
             [EXAMPLE_QUESTION, EXAMPLE_CONTEXT],
+            [
+                "What is a fraction?",
+                (
+                    "A fraction shows a part of a whole. The top number tells how many "
+                    "parts we have. The bottom number tells how many equal parts the "
+                    "whole is divided into."
+                ),
+            ],
+            [
+                "prakash sansleshan vaneko ke ho",
+                (
+                    "Photosynthesis is the process by which green plants use sunlight, "
+                    "water, and carbon dioxide to make food."
+                ),
+            ],
         ],
         inputs=[question_input, context_input],
         outputs=[english_output, nepali_output, quiz_output],
