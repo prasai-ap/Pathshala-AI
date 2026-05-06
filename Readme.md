@@ -1,94 +1,243 @@
 # Pathshala AI
 
-Pathshala AI is a bilingual AI tutor for rural primary education in Nepal.
+Pathshala AI is a bilingual AI tutor for rural primary education in Nepal. It helps students ask questions in English or Nepali, grounds answers in uploaded textbook PDFs, creates short practice quizzes, and gives parents or teachers a simple progress summary.
 
-## Problem
+## Hackathon Pitch
 
-Many rural primary students in Nepal have limited access to personalized learning support, bilingual explanations, and parent-friendly progress feedback.
+Many rural primary students in Nepal do not have steady access to personalized learning support, bilingual explanations, or parent-friendly feedback. Pathshala AI turns a local textbook PDF into a small tutoring workflow: retrieve the right lesson context, explain it simply, ask practice questions, and summarize progress in language that families and teachers can use.
 
-## Solution
+## What Works Now
 
-Pathshala AI will help students ask questions in Nepali or English, retrieve grounded context from uploaded curriculum material, receive simple tutoring explanations, practice with quizzes, and generate summaries for parents.
+- Upload a textbook or worksheet PDF.
+- Extract and chunk text with PyMuPDF.
+- Embed chunks with `sentence-transformers`.
+- Store and search curriculum chunks with Qdrant.
+- Ask a student question through `POST /ask`.
+- Generate simple English and Nepali explanations using an OpenAI-compatible LLM endpoint or mock fallback.
+- Generate 3 simple quiz questions.
+- Track questions asked, topics, quiz scores, weak areas, and bilingual support in memory.
+- Show a parent/teacher summary.
+- Run a separate Hugging Face Space demo with Gradio.
 
 ## Architecture
 
-- FastAPI backend for API endpoints and agent orchestration
-- Streamlit frontend for the hackathon MVP interface
-- Sentence-transformers embedding service for multilingual chunk and query vectors
-- Qdrant vector database for curriculum chunk storage and similarity search
-- Agent placeholders for supervision, retrieval, tutoring, quizzes, and parent summaries
-
-## Upload Flow
-
-1. Open the Streamlit frontend at `http://localhost:8501`.
-2. Upload a textbook or worksheet PDF in the Upload section.
-3. The frontend posts the PDF to `POST /upload-textbook`.
-4. The backend extracts text with PyMuPDF, chunks the text, embeds each chunk with sentence-transformers, and stores vectors in Qdrant.
-5. The UI shows the uploaded filename, page count, and chunk count.
-
-Invalid PDFs, empty files, and PDFs without readable text return a `400` error with a short message.
+```text
+Student / Teacher
+      |
+      v
+Streamlit UI  --------------------->  FastAPI Backend
+      |                                      |
+      |                                      +--> PDF Loader
+      |                                      |    - PyMuPDF text extraction
+      |                                      |    - chunk_text()
+      |                                      |
+      |                                      +--> Embedding Service
+      |                                      |    - sentence-transformers
+      |                                      |
+      |                                      +--> Qdrant Vector Store
+      |                                      |    - textbook chunk vectors
+      |                                      |    - top-k context retrieval
+      |                                      |
+      |                                      +--> Agents
+      |                                      |    - RetrieverAgent
+      |                                      |    - TutorAgent
+      |                                      |    - QuizAgent
+      |                                      |
+      |                                      +--> LLM Client
+      |                                      |    - AMD MI300X vLLM endpoint
+      |                                      |    - mock fallback for local demo
+      |                                      |
+      |                                      +--> StudentStore
+      |                                           - in-memory progress
+      |                                           - parent summary
+      |
+      v
+English answer, Nepali answer, quiz, sources, parent summary
+```
 
 ## RAG Flow
 
 1. Upload a PDF textbook through Streamlit or `POST /upload-textbook`.
-2. The backend chunks the extracted text and indexes each chunk in Qdrant with filename and chunk metadata.
+2. The backend extracts readable text, chunks it, embeds every chunk, and stores the vectors in Qdrant.
 3. A student question is embedded with the same sentence-transformer model.
-4. `search_context(question)` retrieves the most relevant chunks from Qdrant.
-5. `POST /ask` sends the question and retrieved textbook chunks through the tutoring workflow.
-6. The retriever agent returns relevant sources, the tutor agent creates simple English and Nepali explanations, and the quiz agent creates three practice questions.
-7. `GET /debug/search-context?question=...` returns raw matching chunks for testing.
+4. `search_context(question)` retrieves the top relevant chunks.
+5. `POST /ask` sends the question and retrieved chunks through the tutoring workflow.
+6. The tutor prompt says to use textbook context only, explain like a primary-school tutor, keep answers simple, and admit when context is insufficient.
+7. The response includes `answer_english`, `answer_nepali`, `quiz_questions`, and `retrieved_sources`.
 
-The tutoring prompts instruct the model to use textbook context only, explain like a primary-school tutor, keep answers simple, and say when the retrieved context is insufficient.
+## AMD MI300X vLLM Mode
 
-Example ask request:
+Pathshala AI uses an OpenAI-compatible client, so it can call a vLLM server hosted on AMD Developer Cloud MI300X. The backend reads:
 
-```bash
-curl -X POST http://localhost:8000/ask \
-  -H "Content-Type: application/json" \
-  -d "{\"question\":\"What is photosynthesis?\"}"
+```env
+LLM_BASE_URL=http://YOUR_AMD_CLOUD_IP:8000/v1
+LLM_API_KEY=dummy
+LLM_MODEL=Qwen/Qwen2.5-7B-Instruct
 ```
 
-The response includes `answer_english`, `answer_nepali`, `quiz_questions`, and `retrieved_sources`.
+Expected endpoint:
 
-## Progress Tracking
-
-The MVP keeps simple student progress in memory while the backend process is running.
-
-- `POST /ask` records the student's question, inferred topics, and bilingual support used.
-- `POST /submit-quiz` records a manual quiz score, topic, and optional weak areas.
-- `GET /parent-summary/{student_id}` returns strengths, weak topics, suggested next practice, and a short encouraging note.
-
-This is intentionally lightweight for the hackathon MVP and resets when the backend restarts.
-
-## AMD MI300X Usage Plan
-
-The MVP will target an AMD MI300X-hosted open model for high-throughput bilingual tutoring, quiz generation, and report summarization. The backend LLM client will isolate model calls so the app can switch between local development and MI300X inference during deployment.
-
-## MVP Roadmap
-
-1. Add PDF upload and curriculum text extraction
-2. Chunk textbook content and index embeddings in Qdrant
-3. Build retrieval-grounded tutoring responses
-4. Add bilingual quiz generation
-5. Track simple student progress
-6. Generate parent summaries in clear Nepali and English
-
-## Local Development
-
-```bash
-docker compose up
+```text
+POST {LLM_BASE_URL}/chat/completions
 ```
 
-The frontend uses `requirements-frontend.txt` so it does not install the backend ML stack. The backend uses CPU PyTorch wheels for sentence-transformers during local Docker development.
+This lets the app use high-throughput MI300X inference for bilingual tutoring while keeping local development simple. For local mock mode, leave `LLM_BASE_URL` empty so the backend returns deterministic demo responses without calling a model server.
 
-Backend health check:
+## Local Setup
+
+Prerequisites:
+
+- Docker Desktop
+- Git
+- Optional: AMD Developer Cloud vLLM endpoint for real model responses
+
+Run the full app:
+
+```bash
+docker compose up --build
+```
+
+Open:
+
+```text
+Frontend: http://localhost:8501
+Backend:  http://localhost:8000
+Qdrant:   http://localhost:6333
+```
+
+Health check:
 
 ```bash
 curl http://localhost:8000/health
 ```
 
-Frontend:
+Expected response:
+
+```json
+{"status":"ok","service":"pathshala-ai-backend"}
+```
+
+## Mock LLM Demo Mode
+
+Mock mode is useful for judging and local demos when no AMD endpoint is running.
+
+In your runtime environment, set:
+
+```env
+LLM_BASE_URL=
+LLM_API_KEY=dummy
+LLM_MODEL=Qwen/Qwen2.5-7B-Instruct
+```
+
+Then run the app and ask a question. The app still returns an English explanation, Nepali explanation, quiz questions, and retrieved sources, but the answer is generated by a simple fallback instead of an external model.
+
+## API Quick Test
+
+Ask endpoint:
 
 ```bash
-http://localhost:8501
+curl -X POST http://localhost:8000/ask \
+  -H "Content-Type: application/json" \
+  -d "{\"student_id\":\"demo-student\",\"question\":\"What is a fraction?\",\"language_support\":\"English and Nepali\"}"
 ```
+
+Submit quiz result:
+
+```bash
+curl -X POST http://localhost:8000/submit-quiz \
+  -H "Content-Type: application/json" \
+  -d "{\"student_id\":\"demo-student\",\"topic\":\"fractions\",\"score\":2,\"total\":3,\"weak_areas\":[\"equal parts\"]}"
+```
+
+Parent summary:
+
+```bash
+curl http://localhost:8000/parent-summary/demo-student
+```
+
+Debug retrieval:
+
+```bash
+curl "http://localhost:8000/debug/search-context?question=What%20is%20a%20fraction%3F&limit=3"
+```
+
+## Demo Script
+
+1. Start with the problem: rural primary students need simple bilingual help grounded in their actual textbooks.
+2. Open `http://localhost:8501`.
+3. Upload a small textbook or worksheet PDF.
+4. Ask: `What is a fraction?`
+5. Show the English explanation, Nepali explanation, 3 quiz questions, and retrieved textbook sources.
+6. Submit a manual quiz result, for example topic `fractions`, score `2` out of `3`, weak area `equal parts`.
+7. Click `Show Parent/Teacher Summary`.
+8. Explain that AMD MI300X vLLM can replace mock mode by setting `LLM_BASE_URL`, `LLM_API_KEY`, and `LLM_MODEL`.
+
+## Screenshots
+
+Add final hackathon screenshots here:
+
+- `docs/screenshots/01-upload.png` - PDF upload and chunk indexing
+- `docs/screenshots/02-question.png` - student question and bilingual answer
+- `docs/screenshots/03-quiz.png` - generated quiz questions
+- `docs/screenshots/04-parent-summary.png` - parent/teacher summary
+- `docs/screenshots/05-hf-space.png` - Hugging Face Gradio demo
+
+## Hugging Face Space
+
+A Gradio demo is included in `hf_space/`.
+
+Files:
+
+- `hf_space/app.py`
+- `hf_space/requirements.txt`
+- `hf_space/README.md`
+
+To deploy:
+
+1. Create a new Hugging Face Space.
+2. Choose Gradio as the SDK.
+3. Upload the contents of `hf_space/`.
+4. Optional: add a Space secret named `BACKEND_URL` pointing to a deployed backend.
+
+If `BACKEND_URL` is set, the Space calls `POST /ask`. If it is missing or unavailable, the Space uses a mock fallback so judges can try the demo immediately.
+
+Example question:
+
+```text
+What is a fraction?
+```
+
+## Project Structure
+
+```text
+backend/
+  agents/              Agent wrappers for retrieval, tutoring, quiz generation
+  models/              Pydantic API schemas
+  services/            PDF, embedding, Qdrant, LLM, and student progress services
+  main.py              FastAPI app and endpoints
+frontend/
+  app.py               Streamlit interface
+hf_space/
+  app.py               Gradio Space demo
+  requirements.txt
+  README.md
+docker-compose.yml     Backend, frontend, and Qdrant services
+```
+
+## Future Roadmap
+
+1. Persist student progress in a database instead of memory.
+2. Add teacher-managed classes and student profiles.
+3. Add better topic extraction from textbook metadata and curriculum units.
+4. Support speech input and audio explanations for early readers.
+5. Add offline-first deployment for low-connectivity schools.
+6. Improve Nepali evaluation with teacher feedback.
+7. Add role-specific dashboards for students, teachers, and parents.
+8. Add automated tests for API flows and retrieval quality.
+
+## Notes
+
+- Progress tracking is currently in memory and resets when the backend restarts.
+- Qdrant data persists in the Docker volume `qdrant_data`.
+- The frontend uses `requirements-frontend.txt` so it does not install the backend ML stack.
+- The backend uses CPU PyTorch wheels for local sentence-transformers development.
