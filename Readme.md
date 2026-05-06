@@ -9,7 +9,8 @@ Many rural primary students in Nepal do not have steady access to personalized l
 ## What Works Now
 
 - Upload a textbook or worksheet PDF.
-- Extract and chunk text with PyMuPDF.
+- Extract and chunk selectable PDF text with PyMuPDF.
+- Optionally use Gemini OCR for scanned Nepali or English PDF pages.
 - Embed chunks with `sentence-transformers`.
 - Store and search curriculum chunks with Qdrant.
 - Ask a student question through `POST /ask`.
@@ -32,6 +33,7 @@ Streamlit UI  --------------------->  FastAPI Backend
       |                                      |
       |                                      +--> PDF Loader
       |                                      |    - PyMuPDF text extraction
+      |                                      |    - optional Gemini OCR fallback
       |                                      |    - chunk_text()
       |                                      |
       |                                      +--> Embedding Service
@@ -66,15 +68,16 @@ English answer, Nepali answer, quiz, sources, parent summary
 ## RAG Flow
 
 1. Upload a PDF textbook through Streamlit or `POST /upload-textbook`.
-2. The backend extracts readable text, chunks it, embeds every chunk, and stores the vectors in Qdrant.
-3. A student question is normalized if needed. For example, romanized Nepali like `mato katan bhaneko ke ho` is interpreted as `What is soil erosion?`.
-4. The normalized question is embedded with the same sentence-transformer model.
-5. `search_context(question)` retrieves the top relevant chunks.
-6. `POST /ask` sends the normalized question and retrieved chunks through the tutoring workflow.
-7. AMD MI300X/vLLM generates the core textbook-grounded English tutoring answer.
-8. Gemini adapts only that English answer into natural Nepali for primary-school students.
-9. The response includes `normalized_question`, `answer_english`, `answer_nepali`, `quiz_id`, `quiz_questions`, and `retrieved_sources`.
-10. The UI shows only quiz questions to the student. Hidden expected answers stay in backend memory and are used by `POST /grade-quiz`.
+2. The backend extracts readable text. If a scanned/image PDF has too little selectable text and `OCR_PROVIDER=gemini`, it uses Gemini OCR. Set `OCR_MAX_PAGES=0` to OCR the whole book.
+3. The backend chunks the extracted text, embeds every chunk, and stores the vectors in Qdrant.
+4. A student question is normalized if needed. For example, romanized Nepali like `mato katan bhaneko ke ho` is interpreted as `What is soil erosion?`.
+5. The normalized question is embedded with the same sentence-transformer model.
+6. `search_context(question)` retrieves the top relevant chunks.
+7. `POST /ask` sends the normalized question and retrieved chunks through the tutoring workflow.
+8. AMD MI300X/vLLM generates the core textbook-grounded English tutoring answer.
+9. Gemini adapts only that English answer into natural Nepali for primary-school students.
+10. The response includes `normalized_question`, `answer_english`, `answer_nepali`, `quiz_id`, `quiz_questions`, and `retrieved_sources`.
+11. The UI shows only quiz questions to the student. Hidden expected answers stay in backend memory and are used by `POST /grade-quiz`.
 
 ## AMD MI300X vLLM Mode
 
@@ -94,7 +97,7 @@ POST {LLM_BASE_URL}/chat/completions
 
 This lets the app use high-throughput MI300X inference for core textbook-grounded reasoning while keeping local development simple. For local mock mode, leave `LLM_BASE_URL` empty so the backend returns deterministic demo responses without calling a model server.
 
-Important: AMD MI300X/vLLM is used for core textbook-grounded reasoning. Gemini is used only for language adaptation: romanized-Nepali question normalization and Nepali explanation polish.
+Important: AMD MI300X/vLLM is used for core textbook-grounded reasoning. Gemini is optional support for language adaptation and scanned-PDF OCR; it does not replace the core tutor model.
 
 At startup, backend logs clearly show one of:
 
@@ -103,7 +106,7 @@ At startup, backend logs clearly show one of:
 
 ## Nepali Language Adaptation
 
-The AMD-hosted tutor model produces the grounded English explanation. Gemini is then used only for question normalization and translation/polish into simple Nepali.
+The AMD-hosted tutor model produces the grounded English explanation. Gemini can then help with question normalization and translation/polish into simple Nepali.
 
 Set these values in `.env`:
 
@@ -120,6 +123,19 @@ TRANSLATION_PROVIDER=mock
 ```
 
 If `TRANSLATION_PROVIDER=gemini` but `GEMINI_API_KEY` is missing, the app falls back to mock Nepali adaptation. Provider failures also fall back to mock so the demo keeps working. The mock path includes keyword support for common romanized Nepali questions such as `oxygen ke ho`, `mato katan bhaneko ke ho`, and `prakash sansleshan vaneko ke ho`.
+
+## Nepali PDF And OCR
+
+Text-based Nepali PDFs are supported through PyMuPDF extraction and the multilingual embedding model. For scanned or image-based Nepali textbooks, enable Gemini OCR:
+
+```env
+OCR_PROVIDER=gemini
+OCR_MAX_PAGES=0
+GEMINI_API_KEY=YOUR_GEMINI_API_KEY
+GEMINI_MODEL=gemini-2.5-flash
+```
+
+OCR runs only when normal PDF text extraction finds very little text. `OCR_MAX_PAGES=0` means OCR every page. Use a positive number, such as `OCR_MAX_PAGES=20`, when you want a faster demo upload. Full scanned textbooks can take several minutes and will use more Gemini API quota. For a full production system, this should move to a dedicated OCR pipeline with background jobs and stronger page-level progress reporting.
 
 After changing `.env`, recreate the backend/frontend containers so Docker reloads the env values:
 
@@ -152,8 +168,10 @@ The app loads `.env` with `python-dotenv`. Docker Compose also reads `.env`.
 | `LLM_API_KEY` | Backend | Sent as bearer token when configured |
 | `LLM_MODEL` | Backend | Model name sent to `/chat/completions` |
 | `TRANSLATION_PROVIDER` | Backend | `gemini` or `mock` for Nepali adaptation |
-| `GEMINI_API_KEY` | Backend | Gemini key used only when `TRANSLATION_PROVIDER=gemini` |
-| `GEMINI_MODEL` | Backend | Gemini model for Nepali adaptation |
+| `GEMINI_API_KEY` | Backend | Gemini key for Nepali adaptation and optional OCR |
+| `GEMINI_MODEL` | Backend | Gemini model for Nepali adaptation and optional OCR |
+| `OCR_PROVIDER` | Backend | `gemini` enables OCR fallback for scanned PDFs; `off` disables OCR |
+| `OCR_MAX_PAGES` | Backend | `0` means OCR the whole scanned PDF; positive number limits OCR pages |
 
 ## Local Setup
 
@@ -274,7 +292,7 @@ curl "http://localhost:8000/debug/search-context?question=What%20is%20a%20fracti
 6. Type short quiz answers and submit them. The backend auto-grades and infers weak areas.
 7. Click `Show Parent/Teacher Summary`.
 8. Explain that AMD MI300X vLLM can replace mock mode by setting `LLM_BASE_URL`, `LLM_API_KEY`, and `LLM_MODEL`.
-9. Explain that Gemini is enabled only for language adaptation with `TRANSLATION_PROVIDER=gemini`, while AMD MI300X/vLLM handles the textbook-grounded reasoning.
+9. Explain that Gemini is enabled for language adaptation and optional scanned-PDF OCR, while AMD MI300X/vLLM handles the textbook-grounded reasoning.
 
 ## Screenshots
 

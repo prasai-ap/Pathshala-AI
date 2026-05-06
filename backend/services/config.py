@@ -25,6 +25,8 @@ DEFAULT_LLM_MODEL = "Qwen/Qwen2.5-7B-Instruct"
 DEFAULT_TRANSLATION_PROVIDER = "mock"
 DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
 DEFAULT_OPENAI_MODEL = "gpt-4o"
+DEFAULT_OCR_PROVIDER = "off"
+DEFAULT_OCR_MAX_PAGES = 0
 
 
 @dataclass(frozen=True)
@@ -46,6 +48,8 @@ class AppConfig:
     gemini_model: str
     openai_api_key: str
     openai_model: str
+    ocr_provider: str
+    ocr_max_pages: int
 
     @property
     def llm_mode(self) -> str:
@@ -90,6 +94,12 @@ def validate_config(config: AppConfig) -> None:
     if config.translation_provider not in {"gemini", "openai", "mock"}:
         raise RuntimeError("TRANSLATION_PROVIDER must be gemini, openai, or mock.")
 
+    if config.ocr_provider not in {"gemini", "off"}:
+        raise RuntimeError("OCR_PROVIDER must be gemini or off.")
+
+    if config.ocr_max_pages < 0:
+        raise RuntimeError("OCR_MAX_PAGES must be zero or greater.")
+
 
 @lru_cache(maxsize=1)
 def get_config() -> AppConfig:
@@ -119,6 +129,8 @@ def get_config() -> AppConfig:
         gemini_model=os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL).strip(),
         openai_api_key=os.getenv("OPENAI_API_KEY", "").strip(),
         openai_model=os.getenv("OPENAI_MODEL", DEFAULT_OPENAI_MODEL).strip(),
+        ocr_provider=os.getenv("OCR_PROVIDER", DEFAULT_OCR_PROVIDER).strip().lower(),
+        ocr_max_pages=_get_int("OCR_MAX_PAGES", DEFAULT_OCR_MAX_PAGES),
     )
     validate_config(config)
     return config
@@ -151,6 +163,12 @@ def log_startup_config(config: AppConfig) -> None:
         LOGGER.info("Nepali adaptation mode: OpenAI using model %s", config.openai_model)
     else:
         LOGGER.info("Nepali adaptation mode: mock fallback")
+
+    if config.ocr_provider == "gemini" and config.gemini_api_key:
+        page_label = "all" if config.ocr_max_pages == 0 else str(config.ocr_max_pages)
+        LOGGER.info("PDF OCR mode: Gemini fallback enabled for %s pages", page_label)
+    else:
+        LOGGER.info("PDF OCR mode: off")
 
 
 def _get_int(name: str, default: int) -> int:

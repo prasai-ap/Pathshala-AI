@@ -11,6 +11,7 @@ class TextbookUploadResponse(BaseModel):
     filename: str
     page_count: int
     chunk_count: int
+    extraction_method: str | None = None
 
 
 class SearchMatch(BaseModel):

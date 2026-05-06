@@ -9,7 +9,7 @@ load_dotenv()
 
 APP_NAME = os.getenv("APP_NAME", "Pathshala AI")
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
-UPLOAD_TIMEOUT_SECONDS = 180
+UPLOAD_TIMEOUT_SECONDS = 900
 ASK_TIMEOUT_SECONDS = 180
 SHORT_TIMEOUT_SECONDS = 45
 
@@ -41,6 +41,9 @@ if uploaded_pdf is not None:
                     f"Uploaded {result['filename']} with {result['page_count']} pages "
                     f"and {result['chunk_count']} chunks."
                 )
+                extraction_method = result.get("extraction_method")
+                if extraction_method:
+                    st.caption(f"Text extraction: {extraction_method}")
             else:
                 try:
                     detail = response.json().get("detail", "Upload failed.")

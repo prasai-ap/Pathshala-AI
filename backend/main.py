@@ -139,6 +139,7 @@ def upload_textbook(file: UploadFile = File(...)) -> dict[str, object]:
         "filename": filename,
         "page_count": extracted.page_count,
         "chunk_count": len(chunks),
+        "extraction_method": extracted.extraction_method,
     }
 
     return {
@@ -146,6 +147,7 @@ def upload_textbook(file: UploadFile = File(...)) -> dict[str, object]:
         "filename": filename,
         "page_count": extracted.page_count,
         "chunk_count": len(chunks),
+        "extraction_method": extracted.extraction_method,
     }
 
 
