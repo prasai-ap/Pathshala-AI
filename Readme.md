@@ -72,8 +72,8 @@ English answer, Nepali answer, quiz, sources, parent summary
 3. The backend chunks the extracted text, embeds every chunk, and stores the vectors in Qdrant.
 4. A student question is normalized if needed. For example, romanized Nepali like `mato katan bhaneko ke ho` is interpreted as `What is soil erosion?`.
 5. The normalized question is embedded with the same sentence-transformer model.
-6. `search_context(question)` retrieves the top relevant chunks.
-7. `POST /ask` sends the normalized question and retrieved chunks through the tutoring workflow.
+6. `search_context(question)` retrieves the top relevant chunks. If `POST /ask` includes `textbook_context`, that provided context is used directly instead.
+7. `POST /ask` sends the normalized question and textbook context through the tutoring workflow.
 8. AMD MI300X/vLLM generates the core textbook-grounded English tutoring answer.
 9. Gemini adapts only that English answer into natural Nepali for primary-school students.
 10. The response includes `normalized_question`, `answer_english`, `answer_nepali`, `quiz_id`, `quiz_questions`, and `retrieved_sources`.

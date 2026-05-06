@@ -28,7 +28,7 @@ def ask_tutor(question: str, textbook_context: str) -> tuple[str, str, str]:
         )
 
     if BACKEND_URL:
-        backend_result = ask_backend(question)
+        backend_result = ask_backend(question, textbook_context)
 
         if backend_result and not is_insufficient_backend_result(backend_result):
             return backend_result
@@ -36,7 +36,7 @@ def ask_tutor(question: str, textbook_context: str) -> tuple[str, str, str]:
     return mock_response(question=question, textbook_context=textbook_context)
 
 
-def ask_backend(question: str) -> tuple[str, str, str] | None:
+def ask_backend(question: str, textbook_context: str) -> tuple[str, str, str] | None:
     try:
         response = requests.post(
             f"{BACKEND_URL}/ask",
@@ -44,6 +44,7 @@ def ask_backend(question: str) -> tuple[str, str, str] | None:
                 "question": question,
                 "student_id": "hf-space-demo",
                 "language_support": "English and Nepali",
+                "textbook_context": textbook_context,
             },
             timeout=60,
         )

@@ -62,7 +62,8 @@ In Hugging Face Spaces, add it under:
 Space settings -> Variables and secrets -> New variable
 ```
 
-The app calls `POST /ask` and displays the backend response.
+The app calls `POST /ask` and sends both the student question and the optional textbook context.
+If a user types context in the Space, the backend can answer from that context even when no PDF has been uploaded.
 If the backend returns `normalized_question`, the Space shows the interpreted question above the English explanation.
 
 ## Mock Mode

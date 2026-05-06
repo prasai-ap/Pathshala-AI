@@ -29,6 +29,7 @@ class AskRequest(BaseModel):
     question: str
     student_id: str = "demo-student"
     language_support: str = "English and Nepali"
+    textbook_context: str | None = None
 
 
 class RetrievedSource(BaseModel):

@@ -61,6 +61,22 @@ def search_context(question: str, limit: int = 5) -> list[dict[str, object]]:
     return dedupe_sources(matches)[:limit]
 
 
+def context_text_to_sources(text: str) -> list[dict[str, object]]:
+    chunks = chunk_text(text.strip())
+    return [
+        {
+            "score": 1.0,
+            "text": chunk,
+            "metadata": {
+                "filename": "provided-context",
+                "chunk_index": index,
+                "source": "request_textbook_context",
+            },
+        }
+        for index, chunk in enumerate(chunks)
+    ]
+
+
 def dedupe_sources(sources: list[dict[str, object]]) -> list[dict[str, object]]:
     deduped = []
     seen = set()
@@ -168,8 +184,13 @@ def ask_question(request: AskRequest) -> AskResponse:
     try:
         translation_service = get_translation_service()
         normalized_question = translation_service.normalize_question(request.question)
-        retriever_agent = RetrieverAgent(search_context=search_context)
-        sources = retriever_agent.retrieve(normalized_question, limit=5)
+        provided_context = (request.textbook_context or "").strip()
+
+        if provided_context:
+            sources = context_text_to_sources(provided_context)[:5]
+        else:
+            retriever_agent = RetrieverAgent(search_context=search_context)
+            sources = retriever_agent.retrieve(normalized_question, limit=5)
         student_store = get_student_store()
         student_store.record_question(
             student_id=request.student_id,
