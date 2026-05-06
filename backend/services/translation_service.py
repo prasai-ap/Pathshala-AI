@@ -252,6 +252,14 @@ class TranslationService:
         return " ".join(str(source.get("text", "")) for source in sources[:3])
 
     def _known_nepali_concept_answer(self, text: str) -> str | None:
+        if "reflection" in text or "mirror" in text or "ऐना" in text or "प्रतिबिम्ब" in text:
+            return (
+                "प्रकाशको परावर्तन भनेको प्रकाश कुनै सतहमा ठोक्किएर फर्कनु हो। ऐनाले "
+                "प्रकाशलाई राम्रोसँग फर्काउँछ, त्यसैले त्यसमा वस्तुको प्रतिबिम्ब देखिन्छ। "
+                "समथर र चिल्लो सतहमा प्रतिबिम्ब प्रस्ट देखिन्छ, तर खस्रो सतहमा प्रकाश धेरै "
+                "दिशामा छरिने भएकाले प्रतिबिम्ब प्रस्ट देखिँदैन।"
+            )
+
         if "soil erosion" in text or "erosion" in text or "माटो कटान" in text:
             return (
                 "माटो कटान भनेको हावा, पानी वा अन्य कारणले माटोको माथिल्लो मलिलो भाग "

@@ -4,7 +4,7 @@ import json
 import re
 from typing import Any
 
-from backend.services.llm_client import LLMClient
+from backend.services.llm_client import LLMClient, LLMClientError
 
 
 class QuizAgent:
@@ -40,12 +40,15 @@ class QuizAgent:
             f"Textbook context:\n{self._format_sources(sources)}\n\n"
             "Create 3 simple auto-gradable quiz questions with short expected answers."
         )
-        response = self.llm_client.complete(
-            prompt=prompt,
-            system_prompt=system_prompt,
-            temperature=0.2,
-            max_tokens=300,
-        )
+        try:
+            response = self.llm_client.complete(
+                prompt=prompt,
+                system_prompt=system_prompt,
+                temperature=0.2,
+                max_tokens=300,
+            )
+        except LLMClientError:
+            return self._mock_items(sources)
 
         return self._parse_items(response, sources)
 

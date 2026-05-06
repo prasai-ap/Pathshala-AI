@@ -1,8 +1,13 @@
 """Tutor agent for simple bilingual, textbook-grounded explanations."""
 
+import logging
+import re
 from typing import Any
 
-from backend.services.llm_client import LLMClient
+from backend.services.llm_client import LLMClient, LLMClientError
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 class TutorAgent:
@@ -43,20 +48,27 @@ class TutorAgent:
         else:
             system_prompt = (
                 "You are a primary-school tutor. Use only the provided textbook context. "
-                "Write the answer in simple English. Keep the explanation short. If the "
+                "Write the answer in simple English. Keep the explanation short. Explain "
+                "the idea in your own words instead of copying long textbook lines. Ignore "
+                "OCR artifacts, broken words, page numbers, and source labels. If the "
                 "context is insufficient, say that you do not have enough textbook context."
             )
             prompt = (
                 f"Student question:\n{question}\n\n"
-                f"Textbook context:\n{self._format_sources(sources)}"
+                f"Textbook context:\n{self._format_sources(sources)}\n\n"
+                "Answer the student's question directly in 2 to 4 simple sentences."
             )
 
-        answer = self.llm_client.complete(
-            prompt=prompt,
-            system_prompt=system_prompt,
-            temperature=0.2,
-            max_tokens=450,
-        )
+        try:
+            answer = self.llm_client.complete(
+                prompt=prompt,
+                system_prompt=system_prompt,
+                temperature=0.2,
+                max_tokens=450,
+            )
+        except LLMClientError as exc:
+            LOGGER.warning("Tutor LLM completion failed; using local fallback: %s", exc)
+            return self._mock_answer(sources=sources, language=language)
 
         if language == "Nepali":
             answer = self._remove_source_lines(answer)
@@ -93,7 +105,12 @@ class TutorAgent:
                 else "यो प्रश्नको उत्तर दिन पर्याप्त पाठ्यपुस्तक सन्दर्भ छैन।"
             )
 
-        short_context = self._truncate(context)
+        concept_answer = self._known_english_concept_answer(self._combined_source_text(sources).lower())
+
+        if concept_answer and language == "English":
+            return concept_answer
+
+        short_context = self._truncate(self._clean_context_preview(context))
 
         if language == "English":
             return (
@@ -111,6 +128,11 @@ class TutorAgent:
             return text
 
         return f"{text[: max_length - 3]}..."
+
+    def _clean_context_preview(self, text: str) -> str:
+        cleaned = re.sub(r"\bScience\s+an\s+d\s+Technology,\s+Grade\s+\d+\s+\d+\b", "", text)
+        cleaned = re.sub(r"\s+", " ", cleaned)
+        return cleaned.strip(" .")
 
     def _is_valid_nepali_answer(self, text: str) -> bool:
         devanagari_count = sum(1 for character in text if "\u0900" <= character <= "\u097f")
@@ -186,6 +208,14 @@ class TutorAgent:
         return " ".join(str(source.get("text", "")) for source in sources[:3])
 
     def _known_nepali_concept_answer(self, text: str) -> str | None:
+        if "reflection" in text or "mirror" in text or "ऐना" in text or "प्रतिबिम्ब" in text:
+            return (
+                "प्रकाशको परावर्तन भनेको प्रकाश कुनै सतहमा ठोक्किएर फर्कनु हो। ऐनाले "
+                "प्रकाशलाई राम्रोसँग फर्काउँछ, त्यसैले त्यसमा वस्तुको प्रतिबिम्ब देखिन्छ। "
+                "समथर र चिल्लो सतहमा प्रतिबिम्ब प्रस्ट देखिन्छ, तर खस्रो सतहमा प्रकाश धेरै "
+                "दिशामा छरिने भएकाले प्रतिबिम्ब प्रस्ट देखिँदैन।"
+            )
+
         if "soil erosion" in text or "erosion" in text or "माटो कटान" in text:
             return (
                 "माटो कटान भनेको हावा, पानी वा अन्य कारणले माटोको माथिल्लो मलिलो भाग "
@@ -237,6 +267,31 @@ class TutorAgent:
             return (
                 "ऊर्जा भनेको काम गर्न चाहिने शक्ति हो। जीवित प्राणीले खाना र सास फेर्ने "
                 "प्रक्रियाबाट ऊर्जा पाउँछन्। कोषिकाले यही ऊर्जा प्रयोग गरेर जीवनका काम गर्छ।"
+            )
+
+        return None
+
+    def _known_english_concept_answer(self, text: str) -> str | None:
+        if "reflection" in text or "mirror" in text or "image of that object" in text:
+            return (
+                "Reflection of light means light bounces back after hitting a surface. "
+                "A mirror reflects light in an orderly way, so we can see a clear image "
+                "of an object in it. Smooth, flat surfaces make clearer reflections, "
+                "while rough surfaces scatter light and do not show a clear image."
+            )
+
+        if "soil erosion" in text or "erosion" in text:
+            return (
+                "Soil erosion means the top fertile layer of soil is carried away by "
+                "water, wind, or other causes. It makes land less useful for growing "
+                "plants, so protecting soil with plants and controlled water flow is important."
+            )
+
+        if "photosynthesis" in text or "chlorophyll" in text:
+            return (
+                "Photosynthesis is the process by which green plants make their own food "
+                "using sunlight, water, and carbon dioxide. Chlorophyll in leaves helps "
+                "plants capture sunlight, and oxygen is released during the process."
             )
 
         return None

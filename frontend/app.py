@@ -9,6 +9,7 @@ load_dotenv()
 
 APP_NAME = os.getenv("APP_NAME", "Pathshala AI")
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
+HF_SPACE_URL = "https://huggingface.co/spaces/lablab-ai-amd-developer-hackathon/pathshala-ai"
 UPLOAD_TIMEOUT_SECONDS = 900
 ASK_TIMEOUT_SECONDS = 180
 SHORT_TIMEOUT_SECONDS = 45
@@ -20,6 +21,7 @@ st.write(
     "A bilingual AI tutor for rural primary education in Nepal, designed to support "
     "students, teachers, and parents with simple curriculum-grounded learning help."
 )
+st.link_button("Open Hugging Face Space demo", HF_SPACE_URL)
 
 student_id = st.text_input("Student ID", value="demo-student")
 
