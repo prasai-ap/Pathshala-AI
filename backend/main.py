@@ -1,3 +1,4 @@
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
@@ -13,6 +14,7 @@ from backend.models.schemas import (
     SubmitQuizResponse,
 )
 from backend.services.chunker import chunk_text
+from backend.services.config import get_config, log_startup_config
 from backend.services.embedding import get_embedding_service
 from backend.services.llm_client import LLMClientError, get_llm_client
 from backend.services.pdf_loader import PDFExtractionError, extract_pdf_text
@@ -20,9 +22,14 @@ from backend.services.student_store import DEFAULT_STUDENT_ID, StudentStore
 from backend.services.vector_store import VectorStore
 
 
+logging.basicConfig(level=logging.INFO)
+config = get_config()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    app.state.app_name = "Pathshala AI"
+    log_startup_config(config)
+    app.state.app_name = config.app_name
     app.state.textbook_chunks = []
     app.state.textbook_metadata = None
     app.state.embedding_service = None
@@ -55,7 +62,7 @@ def get_student_store() -> StudentStore:
 
 
 app = FastAPI(
-    title="Pathshala AI API",
+    title=f"{config.app_name} API",
     description="Backend API skeleton for a bilingual AI tutor for rural primary education in Nepal.",
     version="0.1.0",
     lifespan=lifespan,

@@ -1,14 +1,18 @@
 import os
 
+from dotenv import load_dotenv
 import requests
 import streamlit as st
 
 
-st.set_page_config(page_title="Pathshala AI", page_icon="PA", layout="centered")
+load_dotenv()
 
+APP_NAME = os.getenv("APP_NAME", "Pathshala AI")
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 
-st.title("Pathshala AI")
+st.set_page_config(page_title=APP_NAME, page_icon="PA", layout="centered")
+
+st.title(APP_NAME)
 st.write(
     "A bilingual AI tutor for rural primary education in Nepal, designed to support "
     "students, teachers, and parents with simple curriculum-grounded learning help."

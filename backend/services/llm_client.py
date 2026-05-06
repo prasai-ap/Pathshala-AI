@@ -1,13 +1,15 @@
 """OpenAI-compatible LLM client for AMD Developer Cloud vLLM endpoints."""
 
-import os
+import logging
 from functools import lru_cache
 from typing import Any
 
 import requests
 
+from backend.services.config import get_config
 
-DEFAULT_LLM_MODEL = "Qwen/Qwen2.5-7B-Instruct"
+
+LOGGER = logging.getLogger(__name__)
 
 
 class LLMClientError(RuntimeError):
@@ -24,10 +26,22 @@ class LLMClient:
         model: str | None = None,
         timeout_seconds: int = 60,
     ) -> None:
-        self.base_url = (base_url or os.getenv("LLM_BASE_URL", "")).rstrip("/")
-        self.api_key = api_key if api_key is not None else os.getenv("LLM_API_KEY", "")
-        self.model = model or os.getenv("LLM_MODEL", DEFAULT_LLM_MODEL)
+        config = get_config()
+        self.base_url = (
+            config.llm_base_url if base_url is None else base_url.strip().rstrip("/")
+        )
+        self.api_key = config.llm_api_key if api_key is None else api_key
+        self.model = config.llm_model if model is None else model
         self.timeout_seconds = timeout_seconds
+
+        if self.is_mock:
+            LOGGER.info("LLM client initialized in mock mode because LLM_BASE_URL is empty.")
+        else:
+            LOGGER.info(
+                "LLM client initialized in AMD vLLM mode with model %s at %s",
+                self.model,
+                self.base_url,
+            )
 
     @property
     def is_mock(self) -> bool:

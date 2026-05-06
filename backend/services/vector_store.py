@@ -1,11 +1,12 @@
 """Qdrant vector store service."""
 
-import os
 from typing import Any
 from uuid import uuid4
 
 from qdrant_client import QdrantClient
 from qdrant_client.http.models import Distance, PointStruct, VectorParams
+
+from backend.services.config import get_config
 
 
 class VectorStore:
@@ -15,10 +16,9 @@ class VectorStore:
         url: str | None = None,
         collection_name: str | None = None,
     ) -> None:
-        self.url = url or os.getenv("QDRANT_URL", "http://localhost:6333")
-        self.collection_name = collection_name or os.getenv(
-            "QDRANT_COLLECTION", "pathshala_curriculum"
-        )
+        config = get_config()
+        self.url = url or config.qdrant_url
+        self.collection_name = collection_name or config.qdrant_collection
         self.vector_size = vector_size
         self.client = QdrantClient(url=self.url)
 

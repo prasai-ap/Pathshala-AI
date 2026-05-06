@@ -83,6 +83,36 @@ POST {LLM_BASE_URL}/chat/completions
 
 This lets the app use high-throughput MI300X inference for bilingual tutoring while keeping local development simple. For local mock mode, leave `LLM_BASE_URL` empty so the backend returns deterministic demo responses without calling a model server.
 
+At startup, backend logs clearly show one of:
+
+- `LLM mode: AMD vLLM mode ...`
+- `LLM mode: mock mode because LLM_BASE_URL is empty.`
+
+## Environment Variables
+
+Copy the example environment file before running locally:
+
+```bash
+cp .env.example .env
+```
+
+The app loads `.env` with `python-dotenv`. Docker Compose also reads `.env`.
+
+| Variable | Used by | Notes |
+| --- | --- | --- |
+| `APP_NAME` | Backend, frontend | App title and startup logging |
+| `ENVIRONMENT` | Backend | Startup logging and deployment label |
+| `BACKEND_HOST` | Docker/backend | Uvicorn bind host |
+| `BACKEND_PORT` | Docker/backend | Uvicorn port and host mapping |
+| `BACKEND_URL` | Frontend, HF Space | API base URL |
+| `FRONTEND_PORT` | Docker/frontend | Streamlit port and host mapping |
+| `QDRANT_URL` | Backend | Qdrant connection URL |
+| `QDRANT_COLLECTION` | Backend | Collection for textbook chunks |
+| `EMBEDDING_MODEL` | Backend | sentence-transformers model name |
+| `LLM_BASE_URL` | Backend | Empty means mock mode; set to AMD vLLM `/v1` URL for real inference |
+| `LLM_API_KEY` | Backend | Sent as bearer token when configured |
+| `LLM_MODEL` | Backend | Model name sent to `/chat/completions` |
+
 ## Local Setup
 
 Prerequisites:
@@ -90,6 +120,20 @@ Prerequisites:
 - Docker Desktop
 - Git
 - Optional: AMD Developer Cloud vLLM endpoint for real model responses
+
+Create your local environment file:
+
+```bash
+cp .env.example .env
+```
+
+The default `.env.example` leaves `LLM_BASE_URL` empty so the app starts in mock LLM mode. To use AMD vLLM mode, set:
+
+```env
+LLM_BASE_URL=http://YOUR_AMD_CLOUD_IP:8000/v1
+LLM_API_KEY=dummy
+LLM_MODEL=Qwen/Qwen2.5-7B-Instruct
+```
 
 Run the full app:
 

@@ -1,9 +1,12 @@
 import os
 from typing import Any
 
+from dotenv import load_dotenv
 import gradio as gr
 import requests
 
+
+load_dotenv()
 
 BACKEND_URL = os.getenv("BACKEND_URL", "").rstrip("/")
 EXAMPLE_QUESTION = "What is a fraction?"
