@@ -50,6 +50,16 @@ curl -X POST http://localhost:8000/ask \
 
 The response includes `answer_english`, `answer_nepali`, `quiz_questions`, and `retrieved_sources`.
 
+## Progress Tracking
+
+The MVP keeps simple student progress in memory while the backend process is running.
+
+- `POST /ask` records the student's question, inferred topics, and bilingual support used.
+- `POST /submit-quiz` records a manual quiz score, topic, and optional weak areas.
+- `GET /parent-summary/{student_id}` returns strengths, weak topics, suggested next practice, and a short encouraging note.
+
+This is intentionally lightweight for the hackathon MVP and resets when the backend restarts.
+
 ## AMD MI300X Usage Plan
 
 The MVP will target an AMD MI300X-hosted open model for high-throughput bilingual tutoring, quiz generation, and report summarization. The backend LLM client will isolate model calls so the app can switch between local development and MI300X inference during deployment.

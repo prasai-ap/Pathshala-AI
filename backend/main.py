@@ -5,11 +5,18 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from backend.agents.quiz_agent import QuizAgent
 from backend.agents.retriever_agent import RetrieverAgent
 from backend.agents.tutor_agent import TutorAgent
-from backend.models.schemas import AskRequest, AskResponse
+from backend.models.schemas import (
+    AskRequest,
+    AskResponse,
+    ParentSummaryResponse,
+    SubmitQuizRequest,
+    SubmitQuizResponse,
+)
 from backend.services.chunker import chunk_text
 from backend.services.embedding import get_embedding_service
 from backend.services.llm_client import LLMClientError, get_llm_client
 from backend.services.pdf_loader import PDFExtractionError, extract_pdf_text
+from backend.services.student_store import DEFAULT_STUDENT_ID, StudentStore
 from backend.services.vector_store import VectorStore
 
 
@@ -19,6 +26,7 @@ async def lifespan(app: FastAPI):
     app.state.textbook_chunks = []
     app.state.textbook_metadata = None
     app.state.embedding_service = None
+    app.state.student_store = StudentStore()
     app.state.vector_store = None
     yield
 
@@ -40,6 +48,10 @@ def search_context(question: str, limit: int = 5) -> list[dict[str, object]]:
     vector_store = get_vector_store()
     query_embedding = embedding_service.embed_query(question)
     return vector_store.search(query_embedding=query_embedding, limit=limit)
+
+
+def get_student_store() -> StudentStore:
+    return app.state.student_store
 
 
 app = FastAPI(
@@ -122,6 +134,12 @@ async def ask_question(request: AskRequest) -> AskResponse:
     try:
         retriever_agent = RetrieverAgent(search_context=search_context)
         sources = retriever_agent.retrieve(request.question, limit=5)
+        student_store = get_student_store()
+        student_store.record_question(
+            student_id=request.student_id,
+            question=request.question,
+            language_support=request.language_support,
+        )
 
         llm_client = get_llm_client()
         tutor_agent = TutorAgent(llm_client=llm_client)
@@ -143,3 +161,32 @@ async def ask_question(request: AskRequest) -> AskResponse:
         quiz_questions=quiz_questions,
         retrieved_sources=sources,
     )
+
+
+@app.post("/submit-quiz", response_model=SubmitQuizResponse)
+async def submit_quiz_result(request: SubmitQuizRequest) -> SubmitQuizResponse:
+    try:
+        student_id = request.student_id or DEFAULT_STUDENT_ID
+        progress = get_student_store().submit_quiz(
+            student_id=student_id,
+            topic=request.topic,
+            score=request.score,
+            total=request.total,
+            weak_areas=request.weak_areas,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return SubmitQuizResponse(
+        student_id=student_id,
+        topic=request.topic,
+        score=request.score,
+        total=request.total,
+        weak_areas=sorted(progress["weak_areas"]),
+    )
+
+
+@app.get("/parent-summary/{student_id}", response_model=ParentSummaryResponse)
+async def parent_summary(student_id: str) -> ParentSummaryResponse:
+    summary = get_student_store().get_parent_summary(student_id)
+    return ParentSummaryResponse(**summary)

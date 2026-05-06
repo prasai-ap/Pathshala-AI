@@ -14,6 +14,8 @@ st.write(
     "students, teachers, and parents with simple curriculum-grounded learning help."
 )
 
+student_id = st.text_input("Student ID", value="demo-student")
+
 st.header("Upload")
 uploaded_pdf = st.file_uploader("Upload textbook or worksheet PDF", type=["pdf"])
 
@@ -48,7 +50,11 @@ if st.button("Ask Tutor", disabled=not question.strip()):
     try:
         response = requests.post(
             f"{BACKEND_URL}/ask",
-            json={"question": question},
+            json={
+                "question": question,
+                "student_id": student_id,
+                "language_support": "English and Nepali",
+            },
             timeout=90,
         )
 
@@ -84,6 +90,43 @@ if result:
 else:
     st.info("Practice questions will appear here.")
 
+st.subheader("Submit Quiz Result")
+quiz_topic = st.text_input("Quiz topic", value="")
+quiz_score = st.number_input("Score", min_value=0, value=0, step=1)
+quiz_total = st.number_input("Total questions", min_value=1, value=3, step=1)
+weak_areas_text = st.text_input("Weak areas, comma separated", value="")
+
+if st.button("Submit Quiz Result", disabled=not quiz_topic.strip()):
+    weak_areas = [
+        area.strip()
+        for area in weak_areas_text.split(",")
+        if area.strip()
+    ]
+
+    try:
+        response = requests.post(
+            f"{BACKEND_URL}/submit-quiz",
+            json={
+                "student_id": student_id,
+                "topic": quiz_topic,
+                "score": quiz_score,
+                "total": quiz_total,
+                "weak_areas": weak_areas,
+            },
+            timeout=30,
+        )
+
+        if response.ok:
+            st.success("Quiz result saved.")
+        else:
+            try:
+                detail = response.json().get("detail", "Quiz submission failed.")
+            except ValueError:
+                detail = "Quiz submission failed."
+            st.error(detail)
+    except requests.RequestException as exc:
+        st.error(f"Could not reach backend: {exc}")
+
 st.header("Retrieved Sources")
 if result:
     for match in result.get("retrieved_sources", []):
@@ -97,4 +140,48 @@ else:
     st.info("Relevant textbook chunks will appear here.")
 
 st.header("Parent Summary")
-st.info("Parent-friendly learning summary will appear here.")
+if st.button("Show Parent/Teacher Summary"):
+    try:
+        response = requests.get(
+            f"{BACKEND_URL}/parent-summary/{student_id}",
+            timeout=30,
+        )
+
+        if response.ok:
+            st.session_state["parent_summary"] = response.json()
+        else:
+            try:
+                detail = response.json().get("detail", "Summary failed.")
+            except ValueError:
+                detail = "Summary failed."
+            st.error(detail)
+    except requests.RequestException as exc:
+        st.error(f"Could not reach backend: {exc}")
+
+summary = st.session_state.get("parent_summary")
+
+if summary:
+    st.subheader("Strengths")
+    for strength in summary.get("strengths", []):
+        st.write(f"- {strength}")
+
+    st.subheader("Weak Topics")
+    weak_topics = summary.get("weak_topics", [])
+    if weak_topics:
+        for topic in weak_topics:
+            st.write(f"- {topic}")
+    else:
+        st.write("No weak topics recorded yet.")
+
+    st.subheader("Suggested Next Practice")
+    st.write(summary.get("suggested_next_practice", ""))
+
+    st.subheader("Encouraging Note")
+    st.write(summary.get("encouraging_note", ""))
+
+    st.caption(
+        f"Questions asked: {summary.get('questions_asked', 0)} | "
+        f"Language support: {', '.join(summary.get('language_support_used', [])) or 'none yet'}"
+    )
+else:
+    st.info("Parent-friendly learning summary will appear here.")
