@@ -18,12 +18,48 @@ The Gradio Space accepts a student question in English, Nepali, or romanized Nep
 - Nepali explanation
 - 3 simple quiz questions
 
+## Deploy To Hugging Face Spaces
+
+1. Create a new Hugging Face Space.
+2. Choose `Gradio` as the SDK.
+3. Upload the files from this `hf_space/` folder into the root of the Space:
+   - `app.py`
+   - `requirements.txt`
+   - `README.md`
+4. Commit the files. Hugging Face will build and run the Space automatically.
+
+You can also deploy with Git:
+
+```bash
+git clone https://huggingface.co/spaces/YOUR_USERNAME/pathshala-ai
+cp hf_space/app.py pathshala-ai/app.py
+cp hf_space/requirements.txt pathshala-ai/requirements.txt
+cp hf_space/README.md pathshala-ai/README.md
+cd pathshala-ai
+git add .
+git commit -m "Deploy Pathshala AI Gradio demo"
+git push
+```
+
+## Recommended Submission Mode
+
+For the easiest hackathon submission, deploy the Space without `BACKEND_URL`.
+It will use the built-in mock fallback, so judges can try it immediately.
+
+For the full RAG workflow, first deploy the FastAPI backend somewhere public, then set `BACKEND_URL` in the Space settings.
+
 ## Backend Mode
 
 Set `BACKEND_URL` to use the FastAPI backend:
 
 ```bash
 BACKEND_URL=https://your-backend.example.com
+```
+
+In Hugging Face Spaces, add it under:
+
+```text
+Space settings -> Variables and secrets -> New variable
 ```
 
 The app calls `POST /ask` and displays the backend response.
