@@ -38,3 +38,9 @@ Example question:
 ```text
 soil erosion vaneko ke ho
 ```
+
+You can also try mixed romanized Nepali questions such as:
+
+```text
+photosynthesis vaneko ke ho vana
+```

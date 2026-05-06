@@ -113,7 +113,53 @@ def normalize_question_mock(question: str) -> str:
     if "oxygen" in text or "aksijan" in text:
         return "What is oxygen?"
 
+    mixed_topic = extract_mixed_language_topic(text)
+
+    if mixed_topic:
+        return f"What is {mixed_topic}?"
+
     return question
+
+
+def extract_mixed_language_topic(text: str) -> str:
+    markers = [
+        " vaneko ",
+        " bhaneko ",
+        " vanya ",
+        " bhanya ",
+        " vanne ",
+        " bhanne ",
+    ]
+
+    if not any(marker in f" {text} " for marker in markers):
+        return ""
+
+    topic = f" {text} "
+    removable_phrases = [
+        " vaneko ",
+        " bhaneko ",
+        " vanya ",
+        " bhanya ",
+        " vanne ",
+        " bhanne ",
+        " ke ho ",
+        " k ho ",
+        " kya ho ",
+        " vana ",
+        " bhana ",
+        " ho ",
+        " ? ",
+    ]
+
+    for phrase in removable_phrases:
+        topic = topic.replace(phrase, " ")
+
+    topic = " ".join(topic.split()).strip(" ?.,")
+
+    if not topic or len(topic) > 80:
+        return ""
+
+    return topic
 
 
 def format_quiz(quiz_questions: list[Any]) -> str:
@@ -194,7 +240,7 @@ with gr.Blocks(title="Pathshala AI", theme=gr.themes.Soft()) as demo:
                 ),
             ],
             [
-                "prakash sansleshan vaneko ke ho",
+                "photosynthesis vaneko ke ho vana",
                 (
                     "Photosynthesis is the process by which green plants use sunlight, "
                     "water, and carbon dioxide to make food."
