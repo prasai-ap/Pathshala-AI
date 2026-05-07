@@ -125,7 +125,9 @@ def ocr_page_with_gemini(png_bytes: bytes, page_number: int) -> str:
                         "text": (
                             "Extract all readable textbook text from this page. The text may "
                             "be in Nepali Devanagari or English. Return plain text only. "
-                            "Preserve headings and important lesson content. Do not summarize."
+                            "Preserve the original language and script exactly as much as "
+                            "possible. Do not translate Nepali text into English. Preserve "
+                            "headings and important lesson content. Do not summarize."
                         )
                     },
                     {

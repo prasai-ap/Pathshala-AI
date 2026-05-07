@@ -321,7 +321,7 @@ To deploy:
 3. Upload the contents of `hf_space/`.
 4. Optional: add a Space secret named `BACKEND_URL` pointing to a deployed backend.
 
-If `BACKEND_URL` is set, the Space calls `POST /ask`. If it is missing or unavailable, the Space uses a mock fallback so judges can try the demo immediately.
+If `BACKEND_URL` is missing, the Space can still upload text-based PDFs, extract text with PyMuPDF, embed chunks in memory, retrieve relevant portions, and show Nepali quiz questions. If `BACKEND_URL` is set, the Space calls the deployed FastAPI backend for the full RAG, OCR, grading, and progress workflow.
 
 Example question:
 

@@ -133,6 +133,7 @@ def upload_textbook(file: UploadFile = File(...)) -> dict[str, object]:
         embedding_service = get_embedding_service()
         embeddings = embedding_service.embed_texts(chunks)
         vector_store = get_vector_store()
+        vector_store.reset_collection()
         vector_store.upsert_chunks(
             chunks=chunks,
             embeddings=embeddings,
@@ -208,7 +209,11 @@ def ask_question(request: AskRequest) -> AskResponse:
             english_answer=answer_english,
             sources=sources,
         )
-        quiz_items = quiz_agent.generate_items(normalized_question, sources)
+        quiz_items = quiz_agent.generate_items(
+            normalized_question,
+            sources,
+            target_language="Nepali",
+        )
         quiz_questions = [item["question"] for item in quiz_items]
         quiz_id = student_store.create_quiz(
             student_id=request.student_id,

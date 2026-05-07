@@ -32,6 +32,15 @@ class VectorStore:
                 vectors_config=VectorParams(size=self.vector_size, distance=Distance.COSINE),
             )
 
+    def reset_collection(self) -> None:
+        collections = self.client.get_collections().collections
+        exists = any(collection.name == self.collection_name for collection in collections)
+
+        if exists:
+            self.client.delete_collection(collection_name=self.collection_name)
+
+        self.ensure_collection()
+
     def upsert_chunks(
         self,
         chunks: list[str],
