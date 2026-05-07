@@ -10,9 +10,26 @@ load_dotenv()
 APP_NAME = os.getenv("APP_NAME", "Pathshala AI")
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 HF_SPACE_URL = "https://huggingface.co/spaces/lablab-ai-amd-developer-hackathon/pathshala-ai"
-UPLOAD_TIMEOUT_SECONDS = 900
+UPLOAD_TIMEOUT_SECONDS = 3600
 ASK_TIMEOUT_SECONDS = 180
 SHORT_TIMEOUT_SECONDS = 45
+
+
+def is_displayable_quiz_question(text: str) -> bool:
+    cleaned = str(text or "").strip()
+
+    if not cleaned:
+        return False
+
+    lowered = cleaned.lower()
+    if lowered in {"json", "{", "}", "[", "]", "```", "```json"}:
+        return False
+
+    if cleaned.startswith(("{", "}", "[", "]")):
+        return False
+
+    return True
+
 
 st.set_page_config(page_title=APP_NAME, page_icon="PA", layout="centered")
 
@@ -109,7 +126,11 @@ else:
 
 st.header("Quiz")
 if result:
-    quiz_questions = result.get("quiz_questions", [])
+    quiz_questions = [
+        quiz_question
+        for quiz_question in result.get("quiz_questions", [])
+        if is_displayable_quiz_question(quiz_question)
+    ]
     quiz_answers = []
 
     for index, quiz_question in enumerate(quiz_questions, start=1):

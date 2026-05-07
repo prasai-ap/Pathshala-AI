@@ -192,8 +192,14 @@ class TutorAgent:
         question: str,
         sources: list[dict[str, Any]],
     ) -> str:
-        topic_text = f"{question} {self._combined_source_text(sources)}".lower()
-        concept_answer = self._known_nepali_concept_answer(topic_text)
+        question_topic_text = question.lower()
+        concept_answer = self._known_nepali_concept_answer(question_topic_text)
+
+        if concept_answer:
+            return concept_answer
+
+        source_topic_text = self._combined_source_text(sources).lower()
+        concept_answer = self._known_nepali_concept_answer(source_topic_text)
 
         if concept_answer:
             return concept_answer
@@ -208,6 +214,23 @@ class TutorAgent:
         return " ".join(str(source.get("text", "")) for source in sources[:3])
 
     def _known_nepali_concept_answer(self, text: str) -> str | None:
+        if (
+            "living thing" in text
+            or "living things" in text
+            or "organism" in text
+            or "organisms" in text
+            or "sajeev" in text
+            or "sajiv" in text
+            or "सजीव" in text
+            or "जीवित वस्तु" in text
+        ):
+            return (
+                "सजीव वा जीवित वस्तु भनेको जीवनका लक्षण देखाउने वस्तु हो। सजीवले "
+                "खाना वा ऊर्जा लिन्छ, सास फेर्छ, बढ्छ, वातावरणको परिवर्तनमा प्रतिक्रिया "
+                "दिन्छ, र प्रजनन गर्न सक्छ। बिरुवा, जनावर, ढुसी र सूक्ष्म जीवहरू "
+                "सजीवका उदाहरण हुन्।"
+            )
+
         if "reflection" in text or "mirror" in text or "ऐना" in text or "प्रतिबिम्ब" in text:
             return (
                 "प्रकाशको परावर्तन भनेको प्रकाश कुनै सतहमा ठोक्किएर फर्कनु हो। ऐनाले "
@@ -272,6 +295,19 @@ class TutorAgent:
         return None
 
     def _known_english_concept_answer(self, text: str) -> str | None:
+        if (
+            "living thing" in text
+            or "living things" in text
+            or "organism" in text
+            or "organisms" in text
+        ):
+            return (
+                "Living things are organisms that show the signs of life. They need "
+                "food or energy, breathe or exchange gases, grow, respond to their "
+                "surroundings, and can reproduce. Plants, animals, fungi, and "
+                "microorganisms are examples of living things."
+            )
+
         if "reflection" in text or "mirror" in text or "image of that object" in text:
             return (
                 "Reflection of light means light bounces back after hitting a surface. "

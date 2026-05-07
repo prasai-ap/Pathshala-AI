@@ -68,7 +68,7 @@ English answer, Nepali answer, quiz, sources, parent summary
 ## RAG Flow
 
 1. Upload a PDF textbook through Streamlit or `POST /upload-textbook`.
-2. The backend extracts readable text. If a scanned/image PDF has too little selectable text and `OCR_PROVIDER=gemini`, it uses Gemini OCR. Set `OCR_MAX_PAGES=0` to OCR the whole book.
+2. The backend extracts readable text. If a scanned/image PDF has too little selectable text and `OCR_PROVIDER=gemini`, it uses Gemini OCR. For demos, keep `OCR_MAX_PAGES` small, such as `5`, so upload stays fast.
 3. The backend chunks the extracted text, embeds every chunk, and stores the vectors in Qdrant.
 4. A student question is normalized if needed. For example, romanized Nepali like `mato katan bhaneko ke ho` is interpreted as `What is soil erosion?`.
 5. The normalized question is embedded with the same sentence-transformer model.
@@ -130,12 +130,12 @@ Text-based Nepali PDFs are supported through PyMuPDF extraction and the multilin
 
 ```env
 OCR_PROVIDER=gemini
-OCR_MAX_PAGES=0
+OCR_MAX_PAGES=5
 GEMINI_API_KEY=YOUR_GEMINI_API_KEY
 GEMINI_MODEL=gemini-2.5-flash
 ```
 
-OCR runs only when normal PDF text extraction finds very little text. `OCR_MAX_PAGES=0` means OCR every page. Use a positive number, such as `OCR_MAX_PAGES=20`, when you want a faster demo upload. Full scanned textbooks can take several minutes and will use more Gemini API quota. For a full production system, this should move to a dedicated OCR pipeline with background jobs and stronger page-level progress reporting.
+OCR runs only when normal PDF text extraction finds very little text or a broken custom-font text layer. `OCR_MAX_PAGES=0` means OCR every page. Whole-book OCR can take many minutes and may pause/retry when Gemini returns rate limits or temporary service errors. For a quicker demo, use a small positive number, such as `OCR_MAX_PAGES=5`. For a full production system, this should move to a dedicated OCR pipeline with background jobs, retries, caching, and stronger page-level progress reporting.
 
 After changing `.env`, recreate the backend/frontend containers so Docker reloads the env values:
 
@@ -171,7 +171,7 @@ The app loads `.env` with `python-dotenv`. Docker Compose also reads `.env`.
 | `GEMINI_API_KEY` | Backend | Gemini key for Nepali adaptation and optional OCR |
 | `GEMINI_MODEL` | Backend | Gemini model for Nepali adaptation and optional OCR |
 | `OCR_PROVIDER` | Backend | `gemini` enables OCR fallback for scanned PDFs; `off` disables OCR |
-| `OCR_MAX_PAGES` | Backend | `0` means OCR the whole scanned PDF; positive number limits OCR pages |
+| `OCR_MAX_PAGES` | Backend | `0` means OCR the whole scanned PDF; use a small positive number like `5` for fast demos |
 
 ## Local Setup
 

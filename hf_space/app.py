@@ -36,6 +36,16 @@ def upload_textbook(pdf_path):
 
     try:
         extracted = extract_pdf_text(pdf_path)
+        if is_garbled_pdf_text(extracted["text"]):
+            return (
+                "This PDF has a broken custom-font text layer, so the extracted text "
+                "is not readable Nepali. Use the backend with Gemini OCR enabled, "
+                "upload a Unicode Nepali PDF, or paste a readable lesson paragraph "
+                "into the context box.",
+                "{}",
+                gr.update(),
+            )
+
         chunks = chunk_text(extracted["text"])
         if not chunks:
             return "No readable text chunks could be created from this PDF.", "{}", gr.update()
@@ -115,6 +125,10 @@ def ask_tutor(question, student_id, textbook_context, textbook_state):
     quiz_state = {
         "quiz_questions": quiz_questions,
         "expected_answers": [source_answer(sources)] * 3,
+        "topic": display_topic(normalize_question(question)),
+        "question": question,
+        "score": None,
+        "total": 3,
     }
     return (
         english,
@@ -179,14 +193,18 @@ def grade_quiz(answer_1, answer_2, answer_3, student_id, quiz_state):
                 timeout=45,
             )
             if response.ok:
-                return format_grade(response.json())
+                data = response.json()
+                state["score"] = data.get("score")
+                state["total"] = data.get("total")
+                state["weak_topics"] = data.get("weak_areas", [])
+                return format_grade(data), encode_state(state)
         except (requests.RequestException, ValueError):
             pass
 
     questions = state.get("quiz_questions", [])
     expected_answers = state.get("expected_answers", [])
     if not questions:
-        return "Ask the tutor first so a quiz can be created."
+        return "Ask the tutor first so a quiz can be created.", encode_state(state)
 
     answers = [answer_1, answer_2, answer_3]
     score = 0
@@ -199,15 +217,52 @@ def grade_quiz(answer_1, answer_2, answer_3, student_id, quiz_state):
         lines.append(f"{'Correct' if is_correct else 'Needs practice'}: {question}")
         if not is_correct and expected:
             lines.append(f"Expected idea: {expected}")
-    return f"Score: {score} / {min(len(questions), 3)}\n" + "\n".join(lines)
+
+    state["score"] = score
+    state["total"] = min(len(questions), 3)
+    state["last_result"] = f"Score: {score} / {min(len(questions), 3)}"
+    state["weak_topics"] = [] if score >= state["total"] else [state.get("topic", "मुख्य पाठ")]
+    return f"Score: {score} / {min(len(questions), 3)}\n" + "\n".join(lines), encode_state(state)
 
 
-def parent_summary(student_id):
+def parent_summary(student_id, quiz_state):
     if not BACKEND_URL:
+        state = decode_state(quiz_state)
+        topic = state.get("topic") or "आजको पाठ"
+        score = state.get("score")
+        total = state.get("total") or 3
+        question = state.get("question") or "पाठ्यपुस्तकको प्रश्न"
+
+        if score is None:
+            return (
+                "Parent/teacher summary\n\n"
+                f"विद्यार्थीले {question} बारे प्रश्न सोधेको छ। अझै क्विज पेश गरिएको छैन। "
+                "उत्तर पढेपछि ३ वटा छोटा प्रश्न प्रयास गराउनुहोस्।"
+            )
+
+        if score >= max(total - 1, 1):
+            strength = f"{topic} को मुख्य विचार राम्रोसँग समात्दैछ।"
+            weak = "अहिले कुनै स्पष्ट कमजोर क्षेत्र देखिएको छैन।"
+            next_step = f"{topic} बाट अर्को उदाहरण वा अभ्यास प्रश्न गराउनुहोस्।"
+            note = "विद्यार्थीले राम्रो प्रगति देखाएको छ। छोटो दैनिक अभ्यास जारी राख्नुहोस्।"
+        elif score > 0:
+            strength = "विद्यार्थीले केही मुख्य कुरा बुझ्न थालेको छ।"
+            weak = f"{topic} का परिभाषा, मुख्य शब्द, र उदाहरण अझै अभ्यास गर्नुपर्छ।"
+            next_step = f"{topic} को पाठ फेरि पढेर सजिलो उदाहरणसहित ३ छोटा प्रश्न गराउनुहोस्।"
+            note = "विद्यार्थी प्रयासरत छ। गलत भएका प्रश्नलाई उदाहरणसँग जोडेर दोहोर्‍याउँदा सुधार हुन्छ।"
+        else:
+            strength = "विद्यार्थीले प्रश्न सोधेर अभ्यास सुरु गरेको छ।"
+            weak = f"{topic} को आधारभूत अर्थ र मुख्य शब्दहरू फेरि बुझाउनुपर्छ।"
+            next_step = f"{topic} को छोटो परिभाषा, चित्र/उदाहरण, र एक-एक गरी प्रश्न अभ्यास गराउनुहोस्।"
+            note = "अहिले थप सहारा चाहिन्छ, तर नियमित सानो अभ्यासले सुधार ल्याउँछ।"
+
         return (
             "Parent/teacher summary\n\n"
-            "The student practiced with uploaded or pasted textbook context in this Space. "
-            "For persistent progress, deploy the FastAPI backend and set BACKEND_URL."
+            f"Quiz score: {score} / {total}\n\n"
+            f"Strength\n{strength}\n\n"
+            f"Needs practice\n{weak}\n\n"
+            f"Suggested next practice\n{next_step}\n\n"
+            f"Encouraging note\n{note}"
         )
 
     try:
@@ -266,6 +321,28 @@ def chunk_text(text):
     if current:
         chunks.append(current)
     return chunks or ([text.strip()] if text.strip() else [])
+
+
+def is_garbled_pdf_text(text):
+    cleaned = "".join(character for character in str(text) if not character.isspace())
+    if len(cleaned) < 300:
+        return False
+
+    devanagari_count = sum(1 for character in cleaned if "\u0900" <= character <= "\u097f")
+    ascii_letter_count = sum(1 for character in cleaned if character.isascii() and character.isalpha())
+    suspicious_symbol_count = sum(1 for character in cleaned if character in "/\\|;:{}[]'\"`~")
+    suspicious_markers = ["kf7", "lj", "cfwf", "tsnf", ";sf", "PsF", "ofsf"]
+    marker_hits = sum(1 for marker in suspicious_markers if marker in text)
+
+    devanagari_ratio = devanagari_count / len(cleaned)
+    ascii_ratio = ascii_letter_count / len(cleaned)
+    symbol_ratio = suspicious_symbol_count / len(cleaned)
+
+    return (
+        devanagari_ratio < 0.05
+        and ascii_ratio > 0.35
+        and (symbol_ratio > 0.12 or marker_hits >= 2)
+    )
 
 
 @lru_cache(maxsize=1)
@@ -332,6 +409,19 @@ def normalize_question(question):
     return question
 
 
+def display_topic(question):
+    normalized = str(question).lower()
+    if "photosynthesis" in normalized or "prakash" in normalized:
+        return "प्रकाश संश्लेषण"
+    if "soil erosion" in normalized or ("mato" in normalized and "katan" in normalized):
+        return "माटो कटान"
+    if "fraction" in normalized or "bhinn" in normalized:
+        return "भिन्न"
+    if "oxygen" in normalized:
+        return "अक्सिजन"
+    return str(question).strip() or "आजको पाठ"
+
+
 def nepali_answer(question, context):
     text = f"{question} {context}".lower()
     if "soil erosion" in text or "माटो कटान" in context:
@@ -358,7 +448,7 @@ def nepali_quiz_questions(context):
     return [
         "प्राप्त पाठ्यपुस्तक सन्दर्भको मुख्य कुरा के हो?",
         f"यो वाक्यले के बुझाउँछ: {short_context}",
-        "यस विषयलाई आफ्नै सरल शब्दमा कसरी भन्न सकिन्छ?",
+        "यस विषयलाई आफ्नै सरल नेपाली शब्दमा कसरी भन्न सकिन्छ?",
     ]
 
 
@@ -535,12 +625,12 @@ with gr.Blocks(title=APP_NAME, theme=gr.themes.Soft()) as demo:
     grade_button.click(
         fn=grade_quiz,
         inputs=[answer_1, answer_2, answer_3, student_id_input, quiz_state],
-        outputs=[grade_output],
+        outputs=[grade_output, quiz_state],
         api_name=False,
     )
     summary_button.click(
         fn=parent_summary,
-        inputs=[student_id_input],
+        inputs=[student_id_input, quiz_state],
         outputs=[summary_output],
         api_name=False,
     )

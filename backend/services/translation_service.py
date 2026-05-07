@@ -236,8 +236,14 @@ class TranslationService:
         english_answer: str,
         sources: list[dict[str, Any]],
     ) -> str:
-        topic_text = f"{question} {english_answer} {self._combined_source_text(sources)}".lower()
-        known_answer = self._known_nepali_concept_answer(topic_text)
+        primary_topic_text = f"{question} {english_answer}".lower()
+        known_answer = self._known_nepali_concept_answer(primary_topic_text)
+
+        if known_answer:
+            return known_answer
+
+        source_topic_text = self._combined_source_text(sources).lower()
+        known_answer = self._known_nepali_concept_answer(source_topic_text)
 
         if known_answer:
             return known_answer
@@ -252,6 +258,23 @@ class TranslationService:
         return " ".join(str(source.get("text", "")) for source in sources[:3])
 
     def _known_nepali_concept_answer(self, text: str) -> str | None:
+        if (
+            "living thing" in text
+            or "living things" in text
+            or "organism" in text
+            or "organisms" in text
+            or "sajeev" in text
+            or "sajiv" in text
+            or "सजीव" in text
+            or "जीवित वस्तु" in text
+        ):
+            return (
+                "सजीव वा जीवित वस्तु भनेको जीवनका लक्षण देखाउने वस्तु हो। सजीवले "
+                "खाना वा ऊर्जा लिन्छ, सास फेर्छ, बढ्छ, वातावरणको परिवर्तनमा प्रतिक्रिया "
+                "दिन्छ, र प्रजनन गर्न सक्छ। बिरुवा, जनावर, ढुसी र सूक्ष्म जीवहरू "
+                "सजीवका उदाहरण हुन्।"
+            )
+
         if "reflection" in text or "mirror" in text or "ऐना" in text or "प्रतिबिम्ब" in text:
             return (
                 "प्रकाशको परावर्तन भनेको प्रकाश कुनै सतहमा ठोक्किएर फर्कनु हो। ऐनाले "
@@ -317,6 +340,21 @@ class TranslationService:
 
     def _mock_normalize_question(self, question: str) -> str:
         text = question.lower()
+
+        if self._has_any(
+            text,
+            [
+                "living thing",
+                "living things",
+                "organism",
+                "organisms",
+                "sajeev",
+                "sajiv",
+                "जीवित",
+                "सजीव",
+            ],
+        ):
+            return "What are living things?"
 
         if (
             "soil erosion" in text

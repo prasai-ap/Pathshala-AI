@@ -43,6 +43,9 @@ class QuizAgent:
                 },
             ]
 
+        if self._wants_nepali(target_language):
+            return self._mock_items(sources, target_language=target_language)
+
         if self.llm_client.is_mock:
             return self._mock_items(sources, target_language=target_language)
 
@@ -80,11 +83,14 @@ class QuizAgent:
         response = response.strip()
 
         try:
-            parsed = json.loads(self._extract_json_array(response))
+            parsed = json.loads(self._extract_json_payload(response))
         except (TypeError, ValueError):
             parsed = []
 
         items = []
+
+        if isinstance(parsed, dict):
+            parsed = [parsed]
 
         if isinstance(parsed, list):
             for item in parsed:
@@ -93,7 +99,7 @@ class QuizAgent:
                     expected_answer = str(item.get("expected_answer", "")).strip()
                     weak_area = str(item.get("weak_area", "")).strip()
 
-                    if question:
+                    if self._is_valid_question_text(question):
                         items.append(
                             {
                                 "question": question,
@@ -101,7 +107,7 @@ class QuizAgent:
                                 "weak_area": weak_area or self._source_weak_area(sources),
                             }
                         )
-                elif isinstance(item, str) and item.strip():
+                elif isinstance(item, str) and self._is_valid_question_text(item.strip()):
                     items.append(
                         {
                             "question": item.strip(),
@@ -118,6 +124,7 @@ class QuizAgent:
                     "weak_area": self._source_weak_area(sources),
                 }
                 for question in self._parse_questions(response)
+                if self._is_valid_question_text(question)
             ]
 
         return (items or self._mock_items(sources))[:3]
@@ -126,8 +133,16 @@ class QuizAgent:
         response = response.strip()
 
         try:
-            parsed = json.loads(self._extract_json_array(response))
-            questions = [item.strip() for item in parsed if isinstance(item, str)]
+            parsed = json.loads(self._extract_json_payload(response))
+
+            if isinstance(parsed, dict):
+                parsed = [parsed]
+
+            questions = [
+                str(item.get("question", "")).strip() if isinstance(item, dict) else item.strip()
+                for item in parsed
+                if isinstance(item, (dict, str))
+            ]
         except (TypeError, ValueError):
             questions = [
                 self._clean_question_line(line)
@@ -135,16 +150,27 @@ class QuizAgent:
                 if self._clean_question_line(line)
             ]
 
-        questions = [question for question in questions if question]
+        questions = [question for question in questions if self._is_valid_question_text(question)]
 
         if not questions:
             return ["Could not create quiz questions from the available context."]
 
         return questions[:3]
 
-    def _extract_json_array(self, response: str) -> str:
-        match = re.search(r"\[[\s\S]*\]", response)
-        return match.group(0) if match else response
+    def _extract_json_payload(self, response: str) -> str:
+        cleaned = response.strip()
+        cleaned = re.sub(r"^```(?:json)?", "", cleaned, flags=re.IGNORECASE).strip()
+        cleaned = re.sub(r"```$", "", cleaned).strip()
+
+        array_match = re.search(r"\[[\s\S]*\]", cleaned)
+        if array_match:
+            return array_match.group(0)
+
+        object_match = re.search(r"\{[\s\S]*\}", cleaned)
+        if object_match:
+            return object_match.group(0)
+
+        return cleaned
 
     def _clean_question_line(self, line: str) -> str:
         cleaned = line.strip().strip("`").strip()
@@ -158,7 +184,32 @@ class QuizAgent:
         if cleaned in {"[", "]"}:
             return ""
 
+        if cleaned.lower() in {"json", "{", "}", "```json", "```"}:
+            return ""
+
+        question_match = re.search(r'"?question"?\s*:\s*"([^"]+)"', cleaned)
+        if question_match:
+            cleaned = question_match.group(1).strip()
+
         return cleaned
+
+    def _is_valid_question_text(self, text: str) -> bool:
+        cleaned = text.strip()
+
+        if not cleaned:
+            return False
+
+        lowered = cleaned.lower()
+        if lowered in {"json", "{", "}", "[", "]", "```", "```json"}:
+            return False
+
+        if cleaned.startswith(("{", "}", "[", "]")):
+            return False
+
+        if re.match(r'^"?\w+"?\s*:', cleaned):
+            return False
+
+        return "?" in cleaned or "？" in cleaned or "के" in cleaned
 
     def _format_sources(self, sources: list[dict[str, Any]]) -> str:
         formatted_sources = []
@@ -255,8 +306,10 @@ class QuizAgent:
         if self._wants_nepali(target_language):
             return (
                 "Write question, expected_answer, and weak_area in Nepali Devanagari. "
+                "Use Nepali as used in Nepal, not Hindi. Use words like के हो, के हुन्छ, "
+                "मुख्य कुरा, उदाहरण, and आफ्नै शब्दमा. "
                 "Do not translate Nepali textbook terms into English. Do not use English "
-                "sentences."
+                "sentences. Do not use Hindi phrases such as क्या होता है."
             )
 
         return f"Write the quiz in {target_language}."
@@ -268,4 +321,18 @@ class QuizAgent:
         question_text = " ".join(item.get("question", "") for item in items)
         devanagari_count = sum(1 for character in question_text if "\u0900" <= character <= "\u097f")
         latin_count = sum(1 for character in question_text if character.isascii() and character.isalpha())
-        return devanagari_count >= 10 and latin_count <= 20
+        hindi_markers = [
+            "क्या",
+            "किस",
+            "की",
+            "में",
+            "है",
+            "होता",
+            "होते",
+            "जाती",
+            "प्रमुख",
+            "कौन",
+            "क्यों",
+        ]
+        has_hindi_markers = any(marker in question_text for marker in hindi_markers)
+        return devanagari_count >= 10 and latin_count <= 20 and not has_hindi_markers

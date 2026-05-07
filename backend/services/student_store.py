@@ -27,6 +27,26 @@ STOPWORDS = {
     "to",
     "what",
     "why",
+    "vaneko",
+    "bhaneko",
+    "vanya",
+    "bhanya",
+    "vane",
+    "bhanne",
+    "ke",
+    "ho",
+    "vana",
+}
+
+TOPIC_ALIASES = {
+    "photosynthesis": "प्रकाश संश्लेषण",
+    "prakash sansleshan": "प्रकाश संश्लेषण",
+    "soil erosion": "माटो कटान",
+    "mato katan": "माटो कटान",
+    "fraction": "भिन्न",
+    "oxygen": "अक्सिजन",
+    "cell": "कोषिका",
+    "energy": "ऊर्जा",
 }
 
 
@@ -170,15 +190,17 @@ class StudentStore:
     def get_parent_summary(self, student_id: str) -> dict[str, Any]:
         progress = self.students[student_id or DEFAULT_STUDENT_ID]
         strengths = self._strengths(progress)
-        weak_topics = sorted(progress["weak_areas"]) or self._lowest_quiz_topics(progress)
+        weak_topics = self._weak_topics(progress)
         suggested_next_practice = self._suggested_practice(weak_topics, progress)
+        topics = self._clean_topic_list(progress["topics"])
+        weak_areas = self._clean_topic_list(progress["weak_areas"])
 
         return {
             "student_id": student_id or DEFAULT_STUDENT_ID,
             "questions_asked": len(progress["questions_asked"]),
-            "topics": sorted(progress["topics"]),
+            "topics": topics,
             "quiz_scores": progress["quiz_scores"],
-            "weak_areas": sorted(progress["weak_areas"]),
+            "weak_areas": weak_areas,
             "language_support_used": sorted(progress["language_support_used"]),
             "strengths": strengths,
             "weak_topics": weak_topics,
@@ -196,29 +218,42 @@ class StudentStore:
         }
 
     def _strengths(self, progress: dict[str, Any]) -> list[str]:
-        weak_topics = set(progress["weak_areas"])
+        weak_topics = set(self._weak_topics(progress))
         strong_quiz_topics = [
-            quiz["topic"]
+            self._display_topic(quiz["topic"])
             for quiz in progress["quiz_scores"]
-            if quiz.get("percentage", 0) >= 0.75 and quiz["topic"] not in weak_topics
+            if quiz.get("percentage", 0) >= 0.75
+            and self._display_topic(quiz["topic"]) not in weak_topics
         ]
 
         if strong_quiz_topics:
-            return sorted(set(strong_quiz_topics))
+            return sorted(set(topic for topic in strong_quiz_topics if topic))
 
         common_topics = [
-            topic
+            self._display_topic(topic)
             for topic, _count in progress["topics"].most_common(3)
-            if topic not in weak_topics
+            if self._display_topic(topic) not in weak_topics
         ]
-        return common_topics or ["asking questions and practicing"]
+        common_topics = [topic for topic in common_topics if topic]
+        return common_topics or ["प्रश्न सोध्ने र अभ्यास गर्ने बानी"]
+
+    def _weak_topics(self, progress: dict[str, Any]) -> list[str]:
+        weak_topics = self._clean_topic_list(progress["weak_areas"])
+        if weak_topics:
+            return weak_topics
+
+        return self._lowest_quiz_topics(progress)
 
     def _lowest_quiz_topics(self, progress: dict[str, Any]) -> list[str]:
         if not progress["quiz_scores"]:
             return []
 
         lowest = sorted(progress["quiz_scores"], key=lambda quiz: quiz["percentage"])
-        return [quiz["topic"] for quiz in lowest[:2] if quiz["percentage"] < 0.75]
+        return [
+            self._display_topic(quiz["topic"])
+            for quiz in lowest[:2]
+            if quiz["percentage"] < 0.75 and self._display_topic(quiz["topic"])
+        ]
 
     def _suggested_practice(
         self,
@@ -226,24 +261,36 @@ class StudentStore:
         progress: dict[str, Any],
     ) -> str:
         if weak_topics:
-            return f"Practice {weak_topics[0]} with a few short examples from the textbook."
+            return (
+                f"{weak_topics[0]} का मुख्य शब्द, परिभाषा, र एउटा उदाहरण फेरि "
+                "पाठ्यपुस्तकबाट पढेर ३ छोटा प्रश्न अभ्यास गर्नुहोस्।"
+            )
 
         if progress["topics"]:
-            topic = progress["topics"].most_common(1)[0][0]
-            return f"Keep practicing {topic} and try one more short quiz."
+            topic = self._display_topic(progress["topics"].most_common(1)[0][0])
+            return f"{topic} मा अभ्यास जारी राख्नुहोस् र अर्को छोटो क्विज प्रयास गर्नुहोस्।"
 
-        return "Ask one textbook question and try a short quiz after the explanation."
+        return "आज पाठ्यपुस्तकबाट एउटा सरल प्रश्न सोधेर उत्तरपछि छोटो क्विज प्रयास गर्नुहोस्।"
 
     def _encouraging_note(self, progress: dict[str, Any]) -> str:
         question_count = len(progress["questions_asked"])
         quiz_count = len(progress["quiz_scores"])
 
         if question_count or quiz_count:
-            return "The student is making steady progress. Keep encouraging small daily practice."
+            latest_score = progress["quiz_scores"][-1] if progress["quiz_scores"] else None
+            if latest_score and latest_score.get("percentage", 0) >= 0.75:
+                return "विद्यार्थीले राम्रो प्रगति देखाएको छ। छोटो दैनिक अभ्यास जारी राख्नुहोस्।"
+            if latest_score:
+                return "विद्यार्थीले प्रयास गरिरहेको छ। गलत भएका प्रश्नलाई उदाहरणसहित फेरि अभ्यास गराउँदा सुधार हुन्छ।"
+            return "विद्यार्थीले प्रश्न सोध्ने राम्रो सुरुवात गरेको छ। अब छोटो अभ्यास थप्नु उपयोगी हुन्छ।"
 
-        return "A good next step is to ask one simple question from the textbook today."
+        return "आज पाठ्यपुस्तकबाट एउटा सरल प्रश्न सोध्नु राम्रो सुरुवात हुनेछ।"
 
     def _extract_topics(self, question: str) -> list[str]:
+        mapped_topic = self._known_topic(question)
+        if mapped_topic:
+            return [mapped_topic]
+
         words = [
             word.strip(".,?!:;()[]{}\"'").lower()
             for word in question.split()
@@ -269,7 +316,16 @@ class StudentStore:
         if not topic:
             return ""
 
-        return topic.strip().lower()
+        cleaned = " ".join(topic.strip().lower().split())
+        known_topic = self._known_topic(cleaned)
+
+        if known_topic:
+            return known_topic
+
+        if self._is_noisy_topic(cleaned):
+            return ""
+
+        return cleaned
 
     def _split_language_support(self, language_support: str) -> list[str]:
         if not language_support.strip():
@@ -304,3 +360,62 @@ class StudentStore:
             for word in answer.split()
             if word.strip(".,?!:;()[]{}\"'")
         )
+
+    def _known_topic(self, text: str) -> str:
+        normalized = " ".join(text.lower().replace("?", " ").split())
+
+        if "photosynthesis" in normalized or (
+            "prakash" in normalized and "sansleshan" in normalized
+        ) or "प्रकाश संश्लेषण" in text:
+            return "प्रकाश संश्लेषण"
+
+        if "soil erosion" in normalized or (
+            "mato" in normalized and "katan" in normalized
+        ) or "माटो कटान" in text:
+            return "माटो कटान"
+
+        for key, value in TOPIC_ALIASES.items():
+            if key in normalized or value in text:
+                return value
+
+        return ""
+
+    def _display_topic(self, topic: str) -> str:
+        normalized = self._normalize_topic(topic)
+        return normalized if normalized and not self._is_noisy_topic(normalized) else ""
+
+    def _clean_topic_list(self, counter: Counter) -> list[str]:
+        topics = []
+
+        for topic, _count in counter.most_common():
+            display_topic = self._display_topic(topic)
+            if display_topic and display_topic not in topics:
+                topics.append(display_topic)
+
+        return topics[:5]
+
+    def _is_noisy_topic(self, topic: str) -> bool:
+        if not topic:
+            return True
+
+        if topic in STOPWORDS:
+            return True
+
+        if len(topic) < 3:
+            return True
+
+        devanagari_count = sum(1 for character in topic if "\u0900" <= character <= "\u097f")
+        ascii_count = sum(1 for character in topic if character.isascii() and character.isalpha())
+        symbol_count = sum(1 for character in topic if character in "/\\|;:{}[]'\"`~")
+        suspicious_markers = ["kf7", "tsnf", "cfwf", ";sf", "ofsf"]
+
+        if any(marker in topic for marker in suspicious_markers):
+            return True
+
+        if symbol_count >= 2:
+            return True
+
+        if ascii_count and devanagari_count == 0 and len(topic) > 30:
+            return True
+
+        return False
