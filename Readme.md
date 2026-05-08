@@ -285,6 +285,8 @@ Start Command: bash scripts/render-start.sh
 Instance Type: Free
 ```
 
+If you use the single-service start script, make sure the build command installs Streamlit. The repo also includes `streamlit` in `requirements.txt`, so `pip install -r requirements.txt` is enough, but the combined command above is still fine.
+
 The repo includes `.python-version` with `3.11` so Render uses a Python version compatible with `sentence-transformers` and the pinned CPU PyTorch wheel. If Render has already cached a different version, set this environment variable in the Render service too:
 
 ```env

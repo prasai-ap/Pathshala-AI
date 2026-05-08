@@ -7,6 +7,6 @@ uvicorn backend.main:app \
   --host 127.0.0.1 \
   --port "${BACKEND_INTERNAL_PORT}" &
 
-streamlit run frontend/app.py \
+python -m streamlit run frontend/app.py \
   --server.address 0.0.0.0 \
   --server.port "${PORT:-10000}"
