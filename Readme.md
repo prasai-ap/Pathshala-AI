@@ -285,6 +285,12 @@ Start Command: bash scripts/render-start.sh
 Instance Type: Free
 ```
 
+The repo includes `.python-version` with `3.11` so Render uses a Python version compatible with `sentence-transformers` and the pinned CPU PyTorch wheel. If Render has already cached a different version, set this environment variable in the Render service too:
+
+```env
+PYTHON_VERSION=3.11.11
+```
+
 Set these environment variables:
 
 ```env
