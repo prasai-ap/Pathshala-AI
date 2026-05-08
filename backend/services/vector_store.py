@@ -18,9 +18,10 @@ class VectorStore:
     ) -> None:
         config = get_config()
         self.url = url or config.qdrant_url
+        self.api_key = config.qdrant_api_key
         self.collection_name = collection_name or config.qdrant_collection
         self.vector_size = vector_size
-        self.client = QdrantClient(url=self.url)
+        self.client = QdrantClient(url=self.url, api_key=self.api_key or None)
 
     def ensure_collection(self) -> None:
         collections = self.client.get_collections().collections

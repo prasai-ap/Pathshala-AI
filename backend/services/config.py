@@ -38,6 +38,7 @@ class AppConfig:
     backend_url: str
     frontend_port: int
     qdrant_url: str
+    qdrant_api_key: str
     qdrant_collection: str
     embedding_model: str
     llm_base_url: str
@@ -113,6 +114,7 @@ def get_config() -> AppConfig:
         backend_url=os.getenv("BACKEND_URL", DEFAULT_BACKEND_URL).strip().rstrip("/"),
         frontend_port=_get_int("FRONTEND_PORT", DEFAULT_FRONTEND_PORT),
         qdrant_url=os.getenv("QDRANT_URL", DEFAULT_QDRANT_URL).strip(),
+        qdrant_api_key=os.getenv("QDRANT_API_KEY", "").strip(),
         qdrant_collection=os.getenv(
             "QDRANT_COLLECTION",
             DEFAULT_QDRANT_COLLECTION,
@@ -146,6 +148,7 @@ def log_startup_config(config: AppConfig) -> None:
     )
     LOGGER.info("Qdrant URL: %s", config.qdrant_url)
     LOGGER.info("Qdrant collection: %s", config.qdrant_collection)
+    LOGGER.info("Qdrant API key configured: %s", "yes" if config.qdrant_api_key else "no")
     LOGGER.info("Embedding model: %s", config.embedding_model)
 
     if config.is_mock_llm:
