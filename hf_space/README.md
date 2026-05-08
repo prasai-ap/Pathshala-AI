@@ -22,4 +22,13 @@ This Hugging Face Space supports:
 - Generating Nepali quiz questions
 - Basic quiz grading
 
-For scanned PDF OCR and persistent progress, deploy the FastAPI backend separately and add a Space variable named `BACKEND_URL`.
+For the full web-app workflow, deploy the FastAPI backend separately and add a Space variable named `BACKEND_URL`.
+
+Without `BACKEND_URL`, the Space can still run the same style of workflow locally. Add these Space secrets/variables to match the web app more closely:
+
+- `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL` for the AMD/vLLM tutor
+- `TRANSLATION_PROVIDER=gemini`, `GEMINI_API_KEY`, `GEMINI_MODEL` for Nepali adaptation and romanized question normalization
+- `TRANSLATION_PROVIDER=openai`, `OPENAI_API_KEY`, `OPENAI_MODEL` if you want to use OpenAI for Nepali adaptation instead
+- `OCR_PROVIDER=gemini`, `OCR_MAX_PAGES=5` for scanned or custom-font PDFs
+
+Use `LLM_MODEL=Qwen/Qwen2.5-7B-Instruct` to match the project default unless your vLLM endpoint exposes a different model name.
