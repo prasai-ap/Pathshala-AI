@@ -272,6 +272,47 @@ streamlit run frontend/app.py --server.address 0.0.0.0 --server.port $PORT
 
 Set the frontend service `BACKEND_URL` to the public backend URL, for example `https://YOUR-BACKEND-SERVICE.onrender.com`.
 
+### Single Render Service Option
+
+For the simplest free-tier demo, you can run both FastAPI and Streamlit in one Render web service. Render exposes Streamlit publicly on `$PORT`, while FastAPI listens privately inside the same service on `127.0.0.1:8000`.
+
+Use these Render settings:
+
+```text
+Runtime: Python
+Build Command: pip install -r requirements.txt -r requirements-frontend.txt
+Start Command: bash scripts/render-start.sh
+Instance Type: Free
+```
+
+Set these environment variables:
+
+```env
+APP_NAME=Pathshala AI
+ENVIRONMENT=production
+BACKEND_URL=http://127.0.0.1:8000
+BACKEND_INTERNAL_PORT=8000
+
+QDRANT_URL=https://YOUR-QDRANT-CLUSTER-URL
+QDRANT_API_KEY=YOUR_QDRANT_CLOUD_API_KEY
+QDRANT_COLLECTION=pathshala_curriculum
+
+EMBEDDING_MODEL=sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
+
+LLM_BASE_URL=
+LLM_API_KEY=dummy
+LLM_MODEL=Qwen/Qwen2.5-7B-Instruct
+
+TRANSLATION_PROVIDER=gemini
+GEMINI_API_KEY=YOUR_GEMINI_API_KEY
+GEMINI_MODEL=gemini-2.5-flash
+
+OCR_PROVIDER=gemini
+OCR_MAX_PAGES=5
+```
+
+Use two separate Render services instead if you need the FastAPI backend to have its own public URL, for example for a Hugging Face Space `BACKEND_URL`.
+
 ## Troubleshooting
 
 If Streamlit shows a message like:
