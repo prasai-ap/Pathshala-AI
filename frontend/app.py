@@ -9,6 +9,17 @@ load_dotenv()
 
 APP_NAME = os.getenv("APP_NAME", "Pathshala AI")
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
+DEPLOYMENT_WARNING_ENABLED = (
+    os.getenv("DEPLOYMENT_WARNING_ENABLED", "false").strip().lower()
+    in {"1", "true", "yes", "on"}
+)
+DEPLOYMENT_WARNING_MESSAGE = os.getenv(
+    "DEPLOYMENT_WARNING_MESSAGE",
+    (
+        "Demo warning: the cloud credits for the hosted AI services have expired, "
+        "so the live project may not work until credits or model hosting are restored."
+    ),
+)
 HF_SPACE_URL = "https://huggingface.co/spaces/lablab-ai-amd-developer-hackathon/pathshala-ai"
 UPLOAD_TIMEOUT_SECONDS = 3600
 ASK_TIMEOUT_SECONDS = 180
@@ -34,6 +45,9 @@ def is_displayable_quiz_question(text: str) -> bool:
 st.set_page_config(page_title=APP_NAME, page_icon="PA", layout="centered")
 
 st.title(APP_NAME)
+if DEPLOYMENT_WARNING_ENABLED:
+    st.warning(DEPLOYMENT_WARNING_MESSAGE)
+
 st.write(
     "A bilingual AI tutor for rural primary education in Nepal, designed to support "
     "students, teachers, and parents with simple curriculum-grounded learning help."

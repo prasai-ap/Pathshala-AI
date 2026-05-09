@@ -79,14 +79,15 @@ English answer, Nepali answer, quiz, sources, parent summary
 10. The response includes `normalized_question`, `answer_english`, `answer_nepali`, `quiz_id`, `quiz_questions`, and `retrieved_sources`.
 11. The UI shows only quiz questions to the student. Hidden expected answers stay in backend memory and are used by `POST /grade-quiz`.
 
-## AMD MI300X vLLM Mode
+## Tutor LLM Mode
 
-Pathshala AI uses an OpenAI-compatible client, so it can call a vLLM server hosted on AMD Developer Cloud MI300X. The backend reads:
+Pathshala AI can use either a Qwen model served from an OpenAI-compatible vLLM endpoint or Gemini directly through the Gemini API. Qwen/vLLM remains the default for core textbook-grounded reasoning:
 
 ```env
+LLM_PROVIDER=qwen
 LLM_BASE_URL=http://YOUR_AMD_CLOUD_IP:8000/v1
 LLM_API_KEY=dummy
-LLM_MODEL=Qwen/Qwen2.5-7B-Instruct
+LLM_MODEL=Qwen/Qwen3-4B-Instruct-2507
 ```
 
 Expected endpoint:
@@ -95,18 +96,27 @@ Expected endpoint:
 POST {LLM_BASE_URL}/chat/completions
 ```
 
-This lets the app use high-throughput MI300X inference for core textbook-grounded reasoning while keeping local development simple. For local mock mode, leave `LLM_BASE_URL` empty so the backend returns deterministic demo responses without calling a model server.
+This lets the app use high-throughput MI300X inference for core textbook-grounded reasoning while keeping local development simple.
 
-Important: AMD MI300X/vLLM is used for core textbook-grounded reasoning. Gemini is optional support for language adaptation and scanned-PDF OCR; it does not replace the core tutor model.
+To use Gemini for the core tutor model instead, set:
+
+```env
+LLM_PROVIDER=gemini
+GEMINI_API_KEY=YOUR_GEMINI_API_KEY
+GEMINI_MODEL=gemini-2.5-flash
+```
+
+Use `gemini-3-flash-preview` only if that preview model is enabled for your Gemini API project. For local mock mode, set `LLM_PROVIDER=mock` or leave the selected provider without its required endpoint/key.
 
 At startup, backend logs clearly show one of:
 
-- `LLM mode: AMD vLLM mode ...`
-- `LLM mode: mock mode because LLM_BASE_URL is empty.`
+- `LLM mode: Qwen vLLM mode ...`
+- `LLM mode: Gemini using model ...`
+- `LLM mode: mock mode`
 
 ## Nepali Language Adaptation
 
-The AMD-hosted tutor model produces the grounded English explanation. Gemini can then help with question normalization and translation/polish into simple Nepali.
+The selected tutor model produces the grounded English explanation. Gemini can also help with question normalization and translation/polish into simple Nepali.
 
 Set these values in `.env`:
 
@@ -161,13 +171,16 @@ The app loads `.env` with `python-dotenv`. Docker Compose also reads `.env`.
 | `BACKEND_PORT` | Docker/backend | Uvicorn port and host mapping |
 | `BACKEND_URL` | Frontend, HF Space | API base URL |
 | `FRONTEND_PORT` | Docker/frontend | Streamlit port and host mapping |
+| `DEPLOYMENT_WARNING_ENABLED` | Frontend, HF Space | `true` shows a visible demo warning banner |
+| `DEPLOYMENT_WARNING_MESSAGE` | Frontend, HF Space | Warning text shown when hosted credits or model services are unavailable |
 | `QDRANT_URL` | Backend | Qdrant connection URL |
 | `QDRANT_API_KEY` | Backend | Required for Qdrant Cloud; leave empty for local Docker Qdrant |
 | `QDRANT_COLLECTION` | Backend | Collection for textbook chunks |
 | `EMBEDDING_MODEL` | Backend | sentence-transformers model name |
-| `LLM_BASE_URL` | Backend | Empty means mock mode; set to AMD vLLM `/v1` URL for real inference |
-| `LLM_API_KEY` | Backend | Sent as bearer token when configured |
-| `LLM_MODEL` | Backend | Model name sent to `/chat/completions` |
+| `LLM_PROVIDER` | Backend | `qwen`, `gemini`, or `mock` for the core tutor model |
+| `LLM_BASE_URL` | Backend | Qwen/vLLM `/v1` URL when `LLM_PROVIDER=qwen` |
+| `LLM_API_KEY` | Backend | Sent as bearer token to Qwen/vLLM when configured |
+| `LLM_MODEL` | Backend | Qwen/vLLM model name sent to `/chat/completions` |
 | `TRANSLATION_PROVIDER` | Backend | `gemini` or `mock` for Nepali adaptation |
 | `GEMINI_API_KEY` | Backend | Gemini key for Nepali adaptation and optional OCR |
 | `GEMINI_MODEL` | Backend | Gemini model for Nepali adaptation and optional OCR |
@@ -188,13 +201,16 @@ Create your local environment file:
 cp .env.example .env
 ```
 
-The default `.env.example` leaves `LLM_BASE_URL` empty so the app starts in mock LLM mode. To use AMD vLLM mode, set:
+The default `.env.example` leaves `LLM_BASE_URL` empty so the app starts in mock LLM mode. To use Qwen/vLLM mode, set:
 
 ```env
+LLM_PROVIDER=qwen
 LLM_BASE_URL=http://YOUR_AMD_CLOUD_IP:8000/v1
 LLM_API_KEY=dummy
-LLM_MODEL=Qwen/Qwen2.5-7B-Instruct
+LLM_MODEL=Qwen/Qwen3-4B-Instruct-2507
 ```
+
+To use Gemini for the core tutor model, set `LLM_PROVIDER=gemini`, `GEMINI_API_KEY`, and `GEMINI_MODEL`.
 
 Run the full app:
 
@@ -231,7 +247,7 @@ In your runtime environment, set:
 ```env
 LLM_BASE_URL=
 LLM_API_KEY=dummy
-LLM_MODEL=Qwen/Qwen2.5-7B-Instruct
+LLM_MODEL=Qwen/Qwen3-4B-Instruct-2507
 ```
 
 Then run the app and ask a question. The app still returns an English explanation, Nepali explanation, quiz questions, and retrieved sources, but the answer is generated by a simple fallback instead of an external model.
@@ -248,12 +264,14 @@ QDRANT_API_KEY=YOUR_QDRANT_CLOUD_API_KEY
 QDRANT_COLLECTION=pathshala_curriculum
 LLM_BASE_URL=
 LLM_API_KEY=dummy
-LLM_MODEL=Qwen/Qwen2.5-7B-Instruct
+LLM_MODEL=Qwen/Qwen3-4B-Instruct-2507
 TRANSLATION_PROVIDER=gemini
 GEMINI_API_KEY=YOUR_GEMINI_API_KEY
 GEMINI_MODEL=gemini-2.5-flash
 OCR_PROVIDER=gemini
 OCR_MAX_PAGES=5
+DEPLOYMENT_WARNING_ENABLED=true
+DEPLOYMENT_WARNING_MESSAGE=Demo warning: the cloud credits for the hosted AI services have expired, so the live project may not work until credits or model hosting are restored.
 ```
 
 Backend Render commands:
@@ -271,6 +289,8 @@ streamlit run frontend/app.py --server.address 0.0.0.0 --server.port $PORT
 ```
 
 Set the frontend service `BACKEND_URL` to the public backend URL, for example `https://YOUR-BACKEND-SERVICE.onrender.com`.
+
+If the deployed AI credits have expired, keep `DEPLOYMENT_WARNING_ENABLED=true` on the frontend service so visitors see the warning before trying the app.
 
 ### Single Render Service Option
 
@@ -309,7 +329,7 @@ EMBEDDING_MODEL=sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
 
 LLM_BASE_URL=
 LLM_API_KEY=dummy
-LLM_MODEL=Qwen/Qwen2.5-7B-Instruct
+LLM_MODEL=Qwen/Qwen3-4B-Instruct-2507
 
 TRANSLATION_PROVIDER=gemini
 GEMINI_API_KEY=YOUR_GEMINI_API_KEY
@@ -320,6 +340,103 @@ OCR_MAX_PAGES=5
 ```
 
 Use two separate Render services instead if you need the FastAPI backend to have its own public URL, for example for a Hugging Face Space `BACKEND_URL`.
+
+## AWS EC2 Deployment
+
+The simplest EC2 deployment path is Docker Compose. Run all three services on one instance: Streamlit frontend, FastAPI backend, and Qdrant with a Docker volume for vector data.
+
+Recommended starting point:
+
+- Ubuntu 22.04 or 24.04 EC2 instance
+- At least 2 vCPU and 4 GB RAM for demos
+- More RAM if you upload large PDFs or use OCR often
+- Security group inbound rules:
+  - `22` from your IP only for SSH
+  - `8501` from your IP or your audience for Streamlit
+  - `8000` from your IP only if you need direct backend access
+  - Do not expose `6333` or `6334` publicly unless you are intentionally managing Qdrant access
+
+Install Docker on the EC2 instance:
+
+```bash
+sudo apt update
+sudo apt install -y ca-certificates curl git
+sudo install -m 0755 -d /etc/apt/keyrings
+sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+sudo chmod a+r /etc/apt/keyrings/docker.asc
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+sudo apt update
+sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+sudo usermod -aG docker ubuntu
+```
+
+Log out and SSH back in so the Docker group change applies.
+
+Clone and configure the app:
+
+```bash
+git clone YOUR_REPO_URL PathshalaAI
+cd PathshalaAI
+cp .env.example .env
+nano .env
+```
+
+For EC2 Docker Compose, use these important values:
+
+```env
+ENVIRONMENT=production
+BACKEND_HOST=0.0.0.0
+BACKEND_PORT=8000
+BACKEND_URL=http://backend:8000
+FRONTEND_PORT=8501
+
+QDRANT_URL=http://qdrant:6333
+QDRANT_API_KEY=
+QDRANT_COLLECTION=pathshala_curriculum
+
+LLM_BASE_URL=
+LLM_API_KEY=dummy
+LLM_MODEL=Qwen/Qwen3-4B-Instruct-2507
+
+TRANSLATION_PROVIDER=gemini
+GEMINI_API_KEY=YOUR_GEMINI_API_KEY
+GEMINI_MODEL=gemini-2.5-flash
+
+OCR_PROVIDER=gemini
+OCR_MAX_PAGES=5
+```
+
+Start the app:
+
+```bash
+docker compose up --build -d
+docker compose ps
+docker compose logs --tail=80 backend
+```
+
+Open the app at:
+
+```text
+http://YOUR_EC2_PUBLIC_IP:8501
+```
+
+Check backend health from the instance:
+
+```bash
+curl http://localhost:8000/health
+```
+
+Useful maintenance commands:
+
+```bash
+docker compose logs -f backend
+docker compose logs -f frontend
+docker compose restart backend frontend
+docker compose pull
+docker compose up --build -d
+```
+
+For a public production-style deployment, put Nginx or an AWS load balancer in front of Streamlit and add HTTPS. Keep API keys only in `.env` on the server, and never commit the real `.env` file.
 
 ## Troubleshooting
 

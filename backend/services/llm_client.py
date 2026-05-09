@@ -1,4 +1,4 @@
-"""OpenAI-compatible LLM client for AMD Developer Cloud vLLM endpoints."""
+"""LLM client for Qwen/vLLM and Gemini tutor backends."""
 
 import logging
 from functools import lru_cache
@@ -27,6 +27,9 @@ class LLMClient:
         timeout_seconds: int = 60,
     ) -> None:
         config = get_config()
+        self.provider = config.llm_provider
+        self.gemini_api_key = config.gemini_api_key
+        self.gemini_model = config.gemini_model
         self.base_url = (
             config.llm_base_url if base_url is None else base_url.strip().rstrip("/")
         )
@@ -35,16 +38,27 @@ class LLMClient:
         self.timeout_seconds = timeout_seconds
 
         if self.is_mock:
-            LOGGER.info("LLM client initialized in mock mode because LLM_BASE_URL is empty.")
+            LOGGER.info("LLM client initialized in mock mode.")
+        elif self.provider == "gemini":
+            LOGGER.info(
+                "LLM client initialized in Gemini mode with model %s",
+                self.gemini_model,
+            )
         else:
             LOGGER.info(
-                "LLM client initialized in AMD vLLM mode with model %s at %s",
+                "LLM client initialized in Qwen vLLM mode with model %s at %s",
                 self.model,
                 self.base_url,
             )
 
     @property
     def is_mock(self) -> bool:
+        if self.provider == "mock":
+            return True
+
+        if self.provider == "gemini":
+            return not self.gemini_api_key
+
         return not self.base_url
 
     def complete(
@@ -76,6 +90,25 @@ class LLMClient:
         if self.is_mock:
             return self._mock_response(messages)
 
+        if self.provider == "gemini":
+            return self._chat_with_gemini(
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+
+        return self._chat_with_openai_compatible(
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+
+    def _chat_with_openai_compatible(
+        self,
+        messages: list[dict[str, str]],
+        temperature: float,
+        max_tokens: int,
+    ) -> str:
         payload = {
             "model": self.model,
             "messages": messages,
@@ -110,6 +143,89 @@ class LLMClient:
             return self._extract_message_content(data)
         except (KeyError, IndexError, TypeError, ValueError) as exc:
             raise LLMClientError("LLM endpoint returned an unexpected response.") from exc
+
+    def _chat_with_gemini(
+        self,
+        messages: list[dict[str, str]],
+        temperature: float,
+        max_tokens: int,
+    ) -> str:
+        system_parts = []
+        contents = []
+
+        for message in messages:
+            role = message.get("role", "user")
+            content = message.get("content", "")
+
+            if not content:
+                continue
+
+            if role == "system":
+                system_parts.append({"text": content})
+            else:
+                contents.append(
+                    {
+                        "role": "model" if role == "assistant" else "user",
+                        "parts": [{"text": content}],
+                    }
+                )
+
+        if not contents:
+            raise ValueError("messages must contain at least one non-system message.")
+
+        payload: dict[str, Any] = {
+            "contents": contents,
+            "generationConfig": {
+                "temperature": temperature,
+                "maxOutputTokens": max_tokens,
+            },
+        }
+
+        if system_parts:
+            payload["systemInstruction"] = {"parts": system_parts}
+
+        endpoint = (
+            "https://generativelanguage.googleapis.com/v1beta/"
+            f"models/{self.gemini_model}:generateContent"
+        )
+
+        try:
+            response = requests.post(
+                endpoint,
+                json=payload,
+                headers={
+                    "Content-Type": "application/json",
+                    "x-goog-api-key": self.gemini_api_key,
+                },
+                timeout=self.timeout_seconds,
+            )
+            response.raise_for_status()
+        except requests.Timeout as exc:
+            raise LLMClientError("Gemini endpoint timed out.") from exc
+        except requests.HTTPError as exc:
+            detail = self._truncate(response.text)
+            raise LLMClientError(
+                f"Gemini endpoint returned HTTP {response.status_code}: {detail}"
+            ) from exc
+        except requests.RequestException as exc:
+            raise LLMClientError(f"Gemini endpoint request failed: {exc}") from exc
+
+        try:
+            data = response.json()
+            parts = data["candidates"][0]["content"]["parts"]
+            text_parts = [
+                part["text"]
+                for part in parts
+                if isinstance(part, dict) and isinstance(part.get("text"), str)
+            ]
+            content = "\n".join(text_parts).strip()
+        except (KeyError, IndexError, TypeError, ValueError) as exc:
+            raise LLMClientError("Gemini endpoint returned an unexpected response.") from exc
+
+        if not content:
+            raise LLMClientError("Gemini endpoint returned an empty response.")
+
+        return content
 
     def _extract_message_content(self, data: dict[str, Any]) -> str:
         content = data["choices"][0]["message"]["content"]

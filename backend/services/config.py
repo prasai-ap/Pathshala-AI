@@ -21,7 +21,8 @@ DEFAULT_FRONTEND_PORT = 8501
 DEFAULT_QDRANT_URL = "http://localhost:6333"
 DEFAULT_QDRANT_COLLECTION = "pathshala_curriculum"
 DEFAULT_EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
-DEFAULT_LLM_MODEL = "Qwen/Qwen2.5-7B-Instruct"
+DEFAULT_LLM_PROVIDER = "qwen"
+DEFAULT_LLM_MODEL = "Qwen/Qwen3-4B-Instruct-2507"
 DEFAULT_TRANSLATION_PROVIDER = "mock"
 DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
 DEFAULT_OPENAI_MODEL = "gpt-4o"
@@ -41,6 +42,7 @@ class AppConfig:
     qdrant_api_key: str
     qdrant_collection: str
     embedding_model: str
+    llm_provider: str
     llm_base_url: str
     llm_api_key: str
     llm_model: str
@@ -54,11 +56,17 @@ class AppConfig:
 
     @property
     def llm_mode(self) -> str:
-        return "AMD vLLM mode" if self.llm_base_url else "mock mode"
+        if self.llm_provider == "gemini" and self.gemini_api_key:
+            return "Gemini mode"
+
+        if self.llm_provider == "qwen" and self.llm_base_url:
+            return "Qwen vLLM mode"
+
+        return "mock mode"
 
     @property
     def is_mock_llm(self) -> bool:
-        return not self.llm_base_url
+        return self.llm_mode == "mock mode"
 
 
 def validate_config(config: AppConfig) -> None:
@@ -72,7 +80,6 @@ def validate_config(config: AppConfig) -> None:
         "QDRANT_URL": config.qdrant_url,
         "QDRANT_COLLECTION": config.qdrant_collection,
         "EMBEDDING_MODEL": config.embedding_model,
-        "LLM_MODEL": config.llm_model,
     }
 
     for name, value in required_values.items():
@@ -89,8 +96,20 @@ def validate_config(config: AppConfig) -> None:
     if config.frontend_port <= 0:
         raise RuntimeError("FRONTEND_PORT must be greater than zero.")
 
+    if config.llm_provider not in {"qwen", "gemini", "mock"}:
+        raise RuntimeError("LLM_PROVIDER must be qwen, gemini, or mock.")
+
+    if config.llm_provider == "qwen" and not config.llm_model:
+        raise RuntimeError("LLM_MODEL is required when LLM_PROVIDER=qwen.")
+
     if config.llm_base_url and not config.llm_api_key.strip():
         LOGGER.warning("LLM_BASE_URL is set but LLM_API_KEY is empty.")
+
+    if config.llm_provider == "qwen" and not config.llm_base_url:
+        LOGGER.warning("LLM_PROVIDER=qwen but LLM_BASE_URL is empty; using mock mode.")
+
+    if config.llm_provider == "gemini" and not config.gemini_api_key:
+        LOGGER.warning("LLM_PROVIDER=gemini but GEMINI_API_KEY is empty; using mock mode.")
 
     if config.translation_provider not in {"gemini", "openai", "mock"}:
         raise RuntimeError("TRANSLATION_PROVIDER must be gemini, openai, or mock.")
@@ -120,6 +139,7 @@ def get_config() -> AppConfig:
             DEFAULT_QDRANT_COLLECTION,
         ).strip(),
         embedding_model=os.getenv("EMBEDDING_MODEL", DEFAULT_EMBEDDING_MODEL).strip(),
+        llm_provider=os.getenv("LLM_PROVIDER", DEFAULT_LLM_PROVIDER).strip().lower(),
         llm_base_url=os.getenv("LLM_BASE_URL", "").strip().rstrip("/"),
         llm_api_key=os.getenv("LLM_API_KEY", "").strip(),
         llm_model=os.getenv("LLM_MODEL", DEFAULT_LLM_MODEL).strip(),
@@ -151,14 +171,16 @@ def log_startup_config(config: AppConfig) -> None:
     LOGGER.info("Qdrant API key configured: %s", "yes" if config.qdrant_api_key else "no")
     LOGGER.info("Embedding model: %s", config.embedding_model)
 
-    if config.is_mock_llm:
-        LOGGER.info("LLM mode: mock mode because LLM_BASE_URL is empty.")
-    else:
+    if config.llm_provider == "qwen" and not config.is_mock_llm:
         LOGGER.info(
-            "LLM mode: AMD vLLM mode using %s with model %s",
+            "LLM mode: Qwen vLLM mode using %s with model %s",
             config.llm_base_url,
             config.llm_model,
         )
+    elif config.llm_provider == "gemini" and not config.is_mock_llm:
+        LOGGER.info("LLM mode: Gemini using model %s", config.gemini_model)
+    else:
+        LOGGER.info("LLM mode: mock mode")
 
     if config.translation_provider == "gemini" and config.gemini_api_key:
         LOGGER.info("Nepali adaptation mode: Gemini using model %s", config.gemini_model)

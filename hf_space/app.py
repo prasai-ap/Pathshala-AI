@@ -13,9 +13,21 @@ load_dotenv()
 
 APP_NAME = os.getenv("APP_NAME", "Pathshala AI")
 BACKEND_URL = os.getenv("BACKEND_URL", "").rstrip("/")
+DEPLOYMENT_WARNING_ENABLED = (
+    os.getenv("DEPLOYMENT_WARNING_ENABLED", "false").strip().lower()
+    in {"1", "true", "yes", "on"}
+)
+DEPLOYMENT_WARNING_MESSAGE = os.getenv(
+    "DEPLOYMENT_WARNING_MESSAGE",
+    (
+        "Demo warning: the cloud credits for the hosted AI services have expired, "
+        "so the live project may not work until credits or model hosting are restored."
+    ),
+)
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "qwen").strip().lower()
 LLM_BASE_URL = os.getenv("LLM_BASE_URL", "").strip().rstrip("/")
 LLM_API_KEY = os.getenv("LLM_API_KEY", "")
-LLM_MODEL = os.getenv("LLM_MODEL", "Qwen/Qwen2.5-7B-Instruct")
+LLM_MODEL = os.getenv("LLM_MODEL", "Qwen/Qwen3-4B-Instruct-2507")
 TRANSLATION_PROVIDER = os.getenv("TRANSLATION_PROVIDER", "mock").strip().lower()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
@@ -195,7 +207,11 @@ def generate_english_answer(question, sources):
     if not sources:
         return "I do not have enough textbook context to answer this question."
 
-    if not LLM_BASE_URL:
+    if (
+        LLM_PROVIDER == "mock"
+        or (LLM_PROVIDER == "qwen" and not LLM_BASE_URL)
+        or (LLM_PROVIDER == "gemini" and not GEMINI_API_KEY)
+    ):
         return fallback_english_answer(sources)
 
     system_prompt = (
@@ -223,6 +239,14 @@ def generate_english_answer(question, sources):
 
 
 def complete_with_llm(prompt, system_prompt="", temperature=0.2, max_tokens=512):
+    if LLM_PROVIDER == "gemini":
+        return complete_with_gemini_llm(
+            prompt=prompt,
+            system_prompt=system_prompt,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+
     messages = []
     if system_prompt:
         messages.append({"role": "system", "content": system_prompt})
@@ -246,6 +270,39 @@ def complete_with_llm(prompt, system_prompt="", temperature=0.2, max_tokens=512)
     response.raise_for_status()
     data = response.json()
     return str(data["choices"][0]["message"]["content"]).strip()
+
+
+def complete_with_gemini_llm(prompt, system_prompt="", temperature=0.2, max_tokens=512):
+    payload = {
+        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+        "generationConfig": {
+            "temperature": temperature,
+            "maxOutputTokens": max_tokens,
+        },
+    }
+
+    if system_prompt:
+        payload["systemInstruction"] = {"parts": [{"text": system_prompt}]}
+
+    response = requests.post(
+        "https://generativelanguage.googleapis.com/v1beta/"
+        f"models/{GEMINI_MODEL}:generateContent",
+        json=payload,
+        headers={
+            "Content-Type": "application/json",
+            "x-goog-api-key": GEMINI_API_KEY,
+        },
+        timeout=180,
+    )
+    response.raise_for_status()
+    data = response.json()
+    parts = data["candidates"][0]["content"]["parts"]
+    text_parts = [
+        part["text"]
+        for part in parts
+        if isinstance(part, dict) and isinstance(part.get("text"), str)
+    ]
+    return "\n".join(text_parts).strip()
 
 
 def adapt_nepali_answer(question, english_answer, sources):
@@ -1092,7 +1149,13 @@ def startup_status():
     if BACKEND_URL:
         return "Backend connected."
 
-    llm_status = "AMD/vLLM tutor enabled." if LLM_BASE_URL else "Local tutor fallback enabled."
+    if LLM_PROVIDER == "gemini" and GEMINI_API_KEY:
+        llm_status = "Gemini tutor enabled."
+    elif LLM_PROVIDER == "qwen" and LLM_BASE_URL:
+        llm_status = "Qwen/vLLM tutor enabled."
+    else:
+        llm_status = "Local tutor fallback enabled."
+
     nepali_status = (
         "Gemini Nepali adaptation enabled."
         if TRANSLATION_PROVIDER == "gemini" and GEMINI_API_KEY
@@ -1108,6 +1171,13 @@ def startup_status():
     return f"{llm_status} {nepali_status} {ocr_status}"
 
 
+def deployment_warning_markdown():
+    if not DEPLOYMENT_WARNING_ENABLED:
+        return ""
+
+    return f"> **Warning:** {DEPLOYMENT_WARNING_MESSAGE}"
+
+
 with gr.Blocks(title=APP_NAME, theme=gr.themes.Soft()) as demo:
     gr.Markdown(
         """
@@ -1115,6 +1185,7 @@ with gr.Blocks(title=APP_NAME, theme=gr.themes.Soft()) as demo:
         Upload a textbook PDF, ask a question, and get textbook-grounded bilingual help.
         """
     )
+    gr.Markdown(deployment_warning_markdown())
 
     textbook_state = gr.State("{}")
     quiz_state = gr.State("{}")
